@@ -12,6 +12,10 @@ inputs:
     description: The repository to check for versions. Only repo name.
     required: true
 
+  github-token:
+    description: The GitHub token to use for accessing the repository.
+    required: true
+
   cdi-versions:
     description:
       List of CDI versions to check for in the coreDriverInterfaceSupported file

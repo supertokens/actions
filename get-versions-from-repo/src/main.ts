@@ -9,6 +9,7 @@ const wjiFile = 'webJsInterfaceSupported.json'
 function getInputs() {
   return {
     repo: core.getInput('repo'),
+    githubToken: core.getInput('github-token'),
     cdiVersions: JSON.parse(core.getInput('cdi-versions') || '[]'),
     fdiVersions: JSON.parse(core.getInput('fdi-versions') || '[]'),
     wjiVersions: JSON.parse(core.getInput('wji-versions') || '[]')
@@ -21,10 +22,12 @@ function getInputs() {
  */
 async function setupRepo({
   repoName,
-  tempDir
+  tempDir,
+  githubToken
 }: {
   repoName: string
   tempDir: string
+  githubToken: string
 }): Promise<{ repo: SimpleGit; repoPath: string }> {
   const repoPath = `${tempDir}/${repoName}`
 
@@ -34,8 +37,13 @@ async function setupRepo({
     // Ignore errors if the directory does not exist
   }
 
+  // await simpleGit().clone(
+  //   `git@github.com:supertokens/${repoName}.git`,
+  //   repoPath,
+  //   ['--no-checkout']
+  // )
   await simpleGit().clone(
-    `git@github.com:supertokens/${repoName}.git`,
+    `https://oauth2:${githubToken}@github.com/supertokens/${repoName}.git`,
     repoPath,
     ['--no-checkout']
   )
@@ -208,7 +216,11 @@ export async function run() {
     )
   }
 
-  const { repo, repoPath } = await setupRepo({ repoName: inputs.repo, tempDir })
+  const { repo, repoPath } = await setupRepo({
+    repoName: inputs.repo,
+    tempDir,
+    githubToken: inputs.githubToken
+  })
   const output = await getVersions({
     repo,
     repoPath,
