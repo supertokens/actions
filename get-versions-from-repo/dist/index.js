@@ -33172,6 +33172,7 @@ const wjiFile = 'webJsInterfaceSupported.json';
 function getInputs() {
     return {
         repo: coreExports.getInput('repo'),
+        githubToken: coreExports.getInput('github-token'),
         cdiVersions: JSON.parse(coreExports.getInput('cdi-versions') || '[]'),
         fdiVersions: JSON.parse(coreExports.getInput('fdi-versions') || '[]'),
         wjiVersions: JSON.parse(coreExports.getInput('wji-versions') || '[]')
@@ -33181,13 +33182,20 @@ function getInputs() {
  * Clone the specified repo to a temporary directory and set up sparse checkout
  * to only include the necessary files.
  */
-async function setupRepo({ repoName, tempDir }) {
+async function setupRepo({ repoName, tempDir, githubToken }) {
     const repoPath = `${tempDir}/${repoName}`;
     try {
         fs.rmSync(repoPath, { recursive: true, force: true });
     }
-    catch { }
-    await simpleGit().clone(`git@github.com:supertokens/${repoName}.git`, repoPath, ['--no-checkout']);
+    catch {
+        // Ignore errors if the directory does not exist
+    }
+    // await simpleGit().clone(
+    //   `git@github.com:supertokens/${repoName}.git`,
+    //   repoPath,
+    //   ['--no-checkout']
+    // )
+    await simpleGit().clone(`https://oauth2:${githubToken}@github.com/supertokens/${repoName}.git`, repoPath, ['--no-checkout']);
     const repo = simpleGit({
         baseDir: repoPath
     });
@@ -33225,6 +33233,7 @@ async function getVersions({ repo, repoPath, cdiVersions = [], fdiVersions = [],
         }
         // Look through other branches to see if they match any interface versions
         // Priority order: versionString, versionString/base, versionString/*
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         Object.entries(output).forEach(([_, interfaceMap]) => {
             Object.entries(interfaceMap).forEach(([interfaceVersion, foundVersion]) => {
                 if (foundVersion !== null) {
@@ -33296,7 +33305,11 @@ async function run() {
     if (tempDir === undefined) {
         throw new Error('RUNNER_TEMP environment variable is not set. Required for setting up the temporary directory.');
     }
-    const { repo, repoPath } = await setupRepo({ repoName: inputs.repo, tempDir });
+    const { repo, repoPath } = await setupRepo({
+        repoName: inputs.repo,
+        tempDir,
+        githubToken: inputs.githubToken
+    });
     const output = await getVersions({
         repo,
         repoPath,
@@ -33304,11 +33317,11 @@ async function run() {
         fdiVersions: inputs.fdiVersions,
         wjiVersions: inputs.wjiVersions
     });
-    coreExports.info(`cdiVersions= ${JSON.stringify(output.cdi)}`);
+    coreExports.info(`cdiVersions=${JSON.stringify(output.cdi)}`);
     coreExports.setOutput('cdiVersions', JSON.stringify(output.cdi));
-    coreExports.info(`fdiVersions= ${JSON.stringify(output.fdi)}`);
+    coreExports.info(`fdiVersions=${JSON.stringify(output.fdi)}`);
     coreExports.setOutput('fdiVersions', JSON.stringify(output.fdi));
-    coreExports.info(`webJsInterfaceVersions= ${JSON.stringify(output.wji)}`);
+    coreExports.info(`webJsInterfaceVersions=${JSON.stringify(output.wji)}`);
     coreExports.setOutput('webJsInterfaceVersions', JSON.stringify(output.wji));
 }
 
