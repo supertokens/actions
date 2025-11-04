@@ -1,6 +1,6 @@
 name: Check tests passed
 description:
-  Check whether all checks have passed for a given github ref (usually a dev-tag).
+  Check whether all checks have passed for a given github ref (usually a dev-tag). Requires Python to be installed.
 
 inputs:
   ref:
@@ -26,10 +26,25 @@ inputs:
     required: false
     default: 'false'
 
+  setup-python:
+    description: Whether to setup python using actions/setup-python
+    required: false
+    default: 'false'
+
 runs:
   using: composite
 
   steps:
+    - if: ${{ inputs.setup-python == 'true' || inputs.setup-python == true }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        pip install httpx
+
     - if: ${{ inputs.skip-test-checks == 'false' || inputs.skip-test-checks == false }}
       shell: bash
       name: Get commit status
