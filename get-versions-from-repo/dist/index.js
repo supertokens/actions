@@ -33175,7 +33175,8 @@ function getInputs() {
         githubToken: coreExports.getInput('github-token'),
         cdiVersions: JSON.parse(coreExports.getInput('cdi-versions') || '[]'),
         fdiVersions: JSON.parse(coreExports.getInput('fdi-versions') || '[]'),
-        wjiVersions: JSON.parse(coreExports.getInput('wji-versions') || '[]')
+        wjiVersions: JSON.parse(coreExports.getInput('wji-versions') || '[]'),
+        versionOverrides: JSON.parse(coreExports.getInput('version-overrides') || '{}')
     };
 }
 /**
@@ -33190,6 +33191,7 @@ async function setupRepo({ repoName, tempDir, githubToken }) {
     catch {
         // Ignore errors if the directory does not exist
     }
+    // NOTE: Uncomment to test locally
     // await simpleGit().clone(
     //   `git@github.com:supertokens/${repoName}.git`,
     //   repoPath,
@@ -33205,21 +33207,36 @@ async function setupRepo({ repoName, tempDir, githubToken }) {
     fs.writeFileSync(`${repoPath}/.git/info/sparse-checkout`, [cdiFile, fdiFile, wjiFile].join('\n'));
     return { repo, repoPath };
 }
-async function getVersions({ repo, repoPath, cdiVersions = [], fdiVersions = [], wjiVersions = [] }) {
+async function getVersions({ repo, repoPath, cdiVersions = [], fdiVersions = [], wjiVersions = [], versionOverrides = {} }) {
     // Get the list of remote branches
     const remoteBranches = await repo.branch(['-r']);
     const branches = remoteBranches.all.map((branch) => branch.replace('origin/', ''));
     const output = {
         cdi: cdiVersions.reduce((acc, v) => {
-            acc[v] = null;
+            if ('cdi' in versionOverrides && v in versionOverrides.cdi) {
+                acc[v] = versionOverrides.cdi[v];
+            }
+            else {
+                acc[v] = null;
+            }
             return acc;
         }, {}),
         fdi: fdiVersions.reduce((acc, v) => {
-            acc[v] = null;
+            if ('fdi' in versionOverrides && v in versionOverrides.fdi) {
+                acc[v] = versionOverrides.fdi[v];
+            }
+            else {
+                acc[v] = null;
+            }
             return acc;
         }, {}),
         wji: wjiVersions.reduce((acc, v) => {
-            acc[v] = null;
+            if ('wji' in versionOverrides && v in versionOverrides.wji) {
+                acc[v] = versionOverrides.wji[v];
+            }
+            else {
+                acc[v] = null;
+            }
             return acc;
         }, {})
     };
@@ -33292,16 +33309,26 @@ async function getVersions({ repo, repoPath, cdiVersions = [], fdiVersions = [],
     return output;
 }
 async function run() {
+    // NOTE: Uncomment lines to test locally
     const inputs = getInputs();
     // const inputs = {
-    //   tempDir: '/Users/namsnath/dev/supertokens/actions/get-versions-from-repo-ts/temp',
+    //   tempDir:
+    //     '/Users/namsnath/dev/supertokens/actions/get-versions-from-repo-ts/temp',
     //   repo: 'supertokens-node',
-    //   cdiVersions: ["5.3", "5.0", "feat/plugin"],
-    //   fdiVersions: ["4.1", "3.0"],
-    //   wjiVersions: ["0.11", "0.12"],
-    // };
+    //   githubToken: '',
+    //   cdiVersions: ['5.3', '5.0'],
+    //   fdiVersions: ['4.1', '3.0'],
+    //   wjiVersions: [],
+    //   versionOverrides: {
+    //     cdi: {
+    //       '5.3': 'override'
+    //     },
+    //     fdi: {},
+    //     wji: {}
+    //   }
+    // }
     const tempDir = process.env['RUNNER_TEMP'];
-    // const tempDir = inputs.tempDir;
+    // const tempDir = inputs.tempDir
     if (tempDir === undefined) {
         throw new Error('RUNNER_TEMP environment variable is not set. Required for setting up the temporary directory.');
     }
@@ -33315,15 +33342,20 @@ async function run() {
         repoPath,
         cdiVersions: inputs.cdiVersions,
         fdiVersions: inputs.fdiVersions,
-        wjiVersions: inputs.wjiVersions
+        wjiVersions: inputs.wjiVersions,
+        versionOverrides: inputs.versionOverrides
     });
     coreExports.info(`cdiVersions=${JSON.stringify(output.cdi)}`);
     coreExports.setOutput('cdiVersions', JSON.stringify(output.cdi));
+    // console.log('cdiVersions', JSON.stringify(output.cdi))
     coreExports.info(`fdiVersions=${JSON.stringify(output.fdi)}`);
     coreExports.setOutput('fdiVersions', JSON.stringify(output.fdi));
+    // console.log('fdiVersions', JSON.stringify(output.fdi))
     coreExports.info(`webJsInterfaceVersions=${JSON.stringify(output.wji)}`);
     coreExports.setOutput('webJsInterfaceVersions', JSON.stringify(output.wji));
+    // console.log('webJsInterfaceVersions', JSON.stringify(output.wji))
 }
+// run()
 
 /**
  * The entrypoint for the action. This file simply imports and runs the action's

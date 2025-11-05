@@ -33,6 +33,12 @@ inputs:
       webJsInterfaceSupported file
     required: false
 
+  version-overrides:
+    description:
+      JSON object mapping each interface version to a specific repo version to
+      use. Top-level keys are `cdi`, `fdi`, and `wji`.
+    required: false
+
 outputs:
   cdiVersions:
     description: Map of cdi versions to their repo versions
