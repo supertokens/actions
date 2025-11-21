@@ -12,7 +12,8 @@ function getInputs() {
     githubToken: core.getInput('github-token'),
     cdiVersions: JSON.parse(core.getInput('cdi-versions') || '[]'),
     fdiVersions: JSON.parse(core.getInput('fdi-versions') || '[]'),
-    wjiVersions: JSON.parse(core.getInput('wji-versions') || '[]')
+    wjiVersions: JSON.parse(core.getInput('wji-versions') || '[]'),
+    versionOverrides: JSON.parse(core.getInput('version-overrides') || '{}')
   }
 }
 
@@ -37,6 +38,7 @@ async function setupRepo({
     // Ignore errors if the directory does not exist
   }
 
+  // NOTE: Uncomment to test locally
   // await simpleGit().clone(
   //   `git@github.com:supertokens/${repoName}.git`,
   //   repoPath,
@@ -69,13 +71,15 @@ async function getVersions({
   repoPath,
   cdiVersions = [],
   fdiVersions = [],
-  wjiVersions = []
+  wjiVersions = [],
+  versionOverrides = {}
 }: {
   repo: SimpleGit
   repoPath: string
   cdiVersions?: string[]
   fdiVersions?: string[]
   wjiVersions?: string[]
+  versionOverrides?: Record<string, Record<string, string>>
 }) {
   // Get the list of remote branches
   const remoteBranches = await repo.branch(['-r'])
@@ -86,21 +90,33 @@ async function getVersions({
   const output = {
     cdi: cdiVersions.reduce(
       (acc, v) => {
-        acc[v] = null
+        if ('cdi' in versionOverrides && v in versionOverrides.cdi) {
+          acc[v] = versionOverrides.cdi[v]
+        } else {
+          acc[v] = null
+        }
         return acc
       },
       {} as Record<string, string | null>
     ),
     fdi: fdiVersions.reduce(
       (acc, v) => {
-        acc[v] = null
+        if ('fdi' in versionOverrides && v in versionOverrides.fdi) {
+          acc[v] = versionOverrides.fdi[v]
+        } else {
+          acc[v] = null
+        }
         return acc
       },
       {} as Record<string, string | null>
     ),
     wji: wjiVersions.reduce(
       (acc, v) => {
-        acc[v] = null
+        if ('wji' in versionOverrides && v in versionOverrides.wji) {
+          acc[v] = versionOverrides.wji[v]
+        } else {
+          acc[v] = null
+        }
         return acc
       },
       {} as Record<string, string | null>
@@ -198,17 +214,27 @@ async function getVersions({
 }
 
 export async function run() {
+  // NOTE: Uncomment lines to test locally
   const inputs = getInputs()
   // const inputs = {
-  //   tempDir: '/Users/namsnath/dev/supertokens/actions/get-versions-from-repo-ts/temp',
+  //   tempDir:
+  //     '/Users/namsnath/dev/supertokens/actions/get-versions-from-repo-ts/temp',
   //   repo: 'supertokens-node',
-  //   cdiVersions: ["5.3", "5.0", "feat/plugin"],
-  //   fdiVersions: ["4.1", "3.0"],
-  //   wjiVersions: ["0.11", "0.12"],
-  // };
+  //   githubToken: '',
+  //   cdiVersions: ['5.3', '5.0'],
+  //   fdiVersions: ['4.1', '3.0'],
+  //   wjiVersions: [],
+  //   versionOverrides: {
+  //     cdi: {
+  //       '5.3': 'override'
+  //     },
+  //     fdi: {},
+  //     wji: {}
+  //   }
+  // }
 
   const tempDir = process.env['RUNNER_TEMP']
-  // const tempDir = inputs.tempDir;
+  // const tempDir = inputs.tempDir
 
   if (tempDir === undefined) {
     throw new Error(
@@ -226,15 +252,21 @@ export async function run() {
     repoPath,
     cdiVersions: inputs.cdiVersions,
     fdiVersions: inputs.fdiVersions,
-    wjiVersions: inputs.wjiVersions
+    wjiVersions: inputs.wjiVersions,
+    versionOverrides: inputs.versionOverrides
   })
 
   core.info(`cdiVersions=${JSON.stringify(output.cdi)}`)
   core.setOutput('cdiVersions', JSON.stringify(output.cdi))
+  // console.log('cdiVersions', JSON.stringify(output.cdi))
 
   core.info(`fdiVersions=${JSON.stringify(output.fdi)}`)
   core.setOutput('fdiVersions', JSON.stringify(output.fdi))
+  // console.log('fdiVersions', JSON.stringify(output.fdi))
 
   core.info(`webJsInterfaceVersions=${JSON.stringify(output.wji)}`)
   core.setOutput('webJsInterfaceVersions', JSON.stringify(output.wji))
+  // console.log('webJsInterfaceVersions', JSON.stringify(output.wji))
 }
+
+// run()
