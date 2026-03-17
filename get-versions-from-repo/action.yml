@@ -50,5 +50,5 @@ outputs:
     description: Map of web-js interface versions to their repo versions
 
 runs:
-  using: node20
+  using: node24
   main: dist/index.js

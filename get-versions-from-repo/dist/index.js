@@ -33169,20 +33169,29 @@ var simpleGit = gitInstanceFactory;
 const cdiFile = 'coreDriverInterfaceSupported.json';
 const fdiFile = 'frontendDriverInterfaceSupported.json';
 const wjiFile = 'webJsInterfaceSupported.json';
+function parseJsonInput(name, fallback) {
+    const raw = coreExports.getInput(name) || fallback;
+    try {
+        return JSON.parse(raw);
+    }
+    catch {
+        throw new Error(`Invalid JSON for input '${name}': ${raw}`);
+    }
+}
 function getInputs() {
     return {
         repo: coreExports.getInput('repo'),
         githubToken: coreExports.getInput('github-token'),
-        cdiVersions: JSON.parse(coreExports.getInput('cdi-versions') || '[]'),
-        fdiVersions: JSON.parse(coreExports.getInput('fdi-versions') || '[]'),
-        wjiVersions: JSON.parse(coreExports.getInput('wji-versions') || '[]'),
-        versionOverrides: JSON.parse(coreExports.getInput('version-overrides') || '{}')
+        cdiVersions: parseJsonInput('cdi-versions', '[]'),
+        fdiVersions: parseJsonInput('fdi-versions', '[]'),
+        wjiVersions: parseJsonInput('wji-versions', '[]'),
+        versionOverrides: parseJsonInput('version-overrides', '{}')
     };
 }
-/**
- * Clone the specified repo to a temporary directory and set up sparse checkout
- * to only include the necessary files.
- */
+function authHeader(githubToken) {
+    const basic = Buffer.from(`x-access-token:${githubToken}`).toString('base64');
+    return `AUTHORIZATION: basic ${basic}`;
+}
 async function setupRepo({ repoName, tempDir, githubToken }) {
     const repoPath = `${tempDir}/${repoName}`;
     try {
@@ -33191,19 +33200,15 @@ async function setupRepo({ repoName, tempDir, githubToken }) {
     catch {
         // Ignore errors if the directory does not exist
     }
-    // NOTE: Uncomment to test locally
-    // await simpleGit().clone(
-    //   `git@github.com:supertokens/${repoName}.git`,
-    //   repoPath,
-    //   ['--no-checkout']
-    // )
-    await simpleGit().clone(`https://oauth2:${githubToken}@github.com/supertokens/${repoName}.git`, repoPath, ['--no-checkout']);
+    await simpleGit().clone(`https://github.com/supertokens/${repoName}.git`, repoPath, [
+        '--no-checkout',
+        '-c',
+        `http.https://github.com/.extraheader=${authHeader(githubToken)}`
+    ]);
     const repo = simpleGit({
         baseDir: repoPath
     });
-    // Enable sparse checkout
     await repo.addConfig('core.sparseCheckout', 'true');
-    // Manually set up sparse checkout to only include the necessary files
     fs.writeFileSync(`${repoPath}/.git/info/sparse-checkout`, [cdiFile, fdiFile, wjiFile].join('\n'));
     return { repo, repoPath };
 }
@@ -33244,7 +33249,7 @@ async function getVersions({ repo, repoPath, cdiVersions = [], fdiVersions = [],
     const otherBranches = [];
     branches.forEach((branch) => {
         // Version branches will be `X.Y`
-        if (branch.search(/^\d+.\d+$/) === 0) {
+        if (branch.search(/^\d+\.\d+$/) === 0) {
             versionBranches.push(branch);
             return;
         }
@@ -33264,8 +33269,17 @@ async function getVersions({ repo, repoPath, cdiVersions = [], fdiVersions = [],
             });
         });
     });
-    // Sort version branches in descending order
-    versionBranches.sort((a, b) => parseFloat(b) - parseFloat(a));
+    // Sort version branches in descending order (proper semver comparison)
+    versionBranches.sort((a, b) => {
+        const pa = a.split('.').map(Number);
+        const pb = b.split('.').map(Number);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+            const d = (pb[i] ?? 0) - (pa[i] ?? 0);
+            if (d !== 0)
+                return d;
+        }
+        return 0;
+    });
     // Checkout each branch and read the required files
     for (const branch of [...versionBranches, ...otherBranches]) {
         await repo.checkout(branch);
@@ -33309,26 +33323,8 @@ async function getVersions({ repo, repoPath, cdiVersions = [], fdiVersions = [],
     return output;
 }
 async function run() {
-    // NOTE: Uncomment lines to test locally
     const inputs = getInputs();
-    // const inputs = {
-    //   tempDir:
-    //     '/Users/namsnath/dev/supertokens/actions/get-versions-from-repo-ts/temp',
-    //   repo: 'supertokens-node',
-    //   githubToken: '',
-    //   cdiVersions: ['5.3', '5.0'],
-    //   fdiVersions: ['4.1', '3.0'],
-    //   wjiVersions: [],
-    //   versionOverrides: {
-    //     cdi: {
-    //       '5.3': 'override'
-    //     },
-    //     fdi: {},
-    //     wji: {}
-    //   }
-    // }
     const tempDir = process.env['RUNNER_TEMP'];
-    // const tempDir = inputs.tempDir
     if (tempDir === undefined) {
         throw new Error('RUNNER_TEMP environment variable is not set. Required for setting up the temporary directory.');
     }
@@ -33347,27 +33343,17 @@ async function run() {
     });
     coreExports.info(`cdiVersions=${JSON.stringify(output.cdi)}`);
     coreExports.setOutput('cdiVersions', JSON.stringify(output.cdi));
-    // console.log('cdiVersions', JSON.stringify(output.cdi))
     coreExports.info(`fdiVersions=${JSON.stringify(output.fdi)}`);
     coreExports.setOutput('fdiVersions', JSON.stringify(output.fdi));
-    // console.log('fdiVersions', JSON.stringify(output.fdi))
     coreExports.info(`webJsInterfaceVersions=${JSON.stringify(output.wji)}`);
     coreExports.setOutput('webJsInterfaceVersions', JSON.stringify(output.wji));
-    // console.log('webJsInterfaceVersions', JSON.stringify(output.wji))
 }
-// run()
 
-/**
- * The entrypoint for the action. This file simply imports and runs the action's
- * main logic.
- */
-try {
-    /* istanbul ignore next */
-    run();
-}
-catch (error) {
-    // Fail the workflow run if an error occurs
+/* istanbul ignore next */
+run().catch((error) => {
     if (error instanceof Error)
         coreExports.setFailed(error.message);
-}
+    else
+        coreExports.setFailed(String(error));
+});
 //# sourceMappingURL=index.js.map

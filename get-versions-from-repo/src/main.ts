@@ -6,21 +6,34 @@ const cdiFile = 'coreDriverInterfaceSupported.json'
 const fdiFile = 'frontendDriverInterfaceSupported.json'
 const wjiFile = 'webJsInterfaceSupported.json'
 
+function parseJsonInput<T>(name: string, fallback: string): T {
+  const raw = core.getInput(name) || fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    throw new Error(`Invalid JSON for input '${name}': ${raw}`)
+  }
+}
+
 function getInputs() {
   return {
     repo: core.getInput('repo'),
     githubToken: core.getInput('github-token'),
-    cdiVersions: JSON.parse(core.getInput('cdi-versions') || '[]'),
-    fdiVersions: JSON.parse(core.getInput('fdi-versions') || '[]'),
-    wjiVersions: JSON.parse(core.getInput('wji-versions') || '[]'),
-    versionOverrides: JSON.parse(core.getInput('version-overrides') || '{}')
+    cdiVersions: parseJsonInput<string[]>('cdi-versions', '[]'),
+    fdiVersions: parseJsonInput<string[]>('fdi-versions', '[]'),
+    wjiVersions: parseJsonInput<string[]>('wji-versions', '[]'),
+    versionOverrides: parseJsonInput<Record<string, Record<string, string>>>(
+      'version-overrides',
+      '{}'
+    )
   }
 }
 
-/**
- * Clone the specified repo to a temporary directory and set up sparse checkout
- * to only include the necessary files.
- */
+function authHeader(githubToken: string): string {
+  const basic = Buffer.from(`x-access-token:${githubToken}`).toString('base64')
+  return `AUTHORIZATION: basic ${basic}`
+}
+
 async function setupRepo({
   repoName,
   tempDir,
@@ -38,26 +51,22 @@ async function setupRepo({
     // Ignore errors if the directory does not exist
   }
 
-  // NOTE: Uncomment to test locally
-  // await simpleGit().clone(
-  //   `git@github.com:supertokens/${repoName}.git`,
-  //   repoPath,
-  //   ['--no-checkout']
-  // )
   await simpleGit().clone(
-    `https://oauth2:${githubToken}@github.com/supertokens/${repoName}.git`,
+    `https://github.com/supertokens/${repoName}.git`,
     repoPath,
-    ['--no-checkout']
+    [
+      '--no-checkout',
+      '-c',
+      `http.https://github.com/.extraheader=${authHeader(githubToken)}`
+    ]
   )
 
   const repo: SimpleGit = simpleGit({
     baseDir: repoPath
   })
 
-  // Enable sparse checkout
   await repo.addConfig('core.sparseCheckout', 'true')
 
-  // Manually set up sparse checkout to only include the necessary files
   fs.writeFileSync(
     `${repoPath}/.git/info/sparse-checkout`,
     [cdiFile, fdiFile, wjiFile].join('\n')
@@ -127,7 +136,7 @@ async function getVersions({
   const otherBranches: string[] = []
   branches.forEach((branch) => {
     // Version branches will be `X.Y`
-    if (branch.search(/^\d+.\d+$/) === 0) {
+    if (branch.search(/^\d+\.\d+$/) === 0) {
       versionBranches.push(branch)
       return
     }
@@ -154,8 +163,16 @@ async function getVersions({
     })
   })
 
-  // Sort version branches in descending order
-  versionBranches.sort((a, b) => parseFloat(b) - parseFloat(a))
+  // Sort version branches in descending order (proper semver comparison)
+  versionBranches.sort((a, b) => {
+    const pa = a.split('.').map(Number)
+    const pb = b.split('.').map(Number)
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pb[i] ?? 0) - (pa[i] ?? 0)
+      if (d !== 0) return d
+    }
+    return 0
+  })
 
   // Checkout each branch and read the required files
   for (const branch of [...versionBranches, ...otherBranches]) {
@@ -214,27 +231,9 @@ async function getVersions({
 }
 
 export async function run() {
-  // NOTE: Uncomment lines to test locally
   const inputs = getInputs()
-  // const inputs = {
-  //   tempDir:
-  //     '/Users/namsnath/dev/supertokens/actions/get-versions-from-repo-ts/temp',
-  //   repo: 'supertokens-node',
-  //   githubToken: '',
-  //   cdiVersions: ['5.3', '5.0'],
-  //   fdiVersions: ['4.1', '3.0'],
-  //   wjiVersions: [],
-  //   versionOverrides: {
-  //     cdi: {
-  //       '5.3': 'override'
-  //     },
-  //     fdi: {},
-  //     wji: {}
-  //   }
-  // }
 
   const tempDir = process.env['RUNNER_TEMP']
-  // const tempDir = inputs.tempDir
 
   if (tempDir === undefined) {
     throw new Error(
@@ -258,15 +257,10 @@ export async function run() {
 
   core.info(`cdiVersions=${JSON.stringify(output.cdi)}`)
   core.setOutput('cdiVersions', JSON.stringify(output.cdi))
-  // console.log('cdiVersions', JSON.stringify(output.cdi))
 
   core.info(`fdiVersions=${JSON.stringify(output.fdi)}`)
   core.setOutput('fdiVersions', JSON.stringify(output.fdi))
-  // console.log('fdiVersions', JSON.stringify(output.fdi))
 
   core.info(`webJsInterfaceVersions=${JSON.stringify(output.wji)}`)
   core.setOutput('webJsInterfaceVersions', JSON.stringify(output.wji))
-  // console.log('webJsInterfaceVersions', JSON.stringify(output.wji))
 }
-
-// run()
