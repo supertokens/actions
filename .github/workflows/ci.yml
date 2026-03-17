@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # Detect which TypeScript action directories have changed files
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      actions: ${{ steps.filter.outputs.actions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed TS actions
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            generate-test-matrix:
+              - 'generate-test-matrix/src/**'
+              - 'generate-test-matrix/package*.json'
+              - 'generate-test-matrix/tsconfig*.json'
+            get-core-dependencies-action:
+              - 'get-core-dependencies-action/src/**'
+              - 'get-core-dependencies-action/package*.json'
+              - 'get-core-dependencies-action/tsconfig*.json'
+            get-supported-versions-action:
+              - 'get-supported-versions-action/src/**'
+              - 'get-supported-versions-action/package*.json'
+              - 'get-supported-versions-action/tsconfig*.json'
+            get-versions-action:
+              - 'get-versions-action/src/**'
+              - 'get-versions-action/package*.json'
+              - 'get-versions-action/tsconfig*.json'
+            get-versions-from-repo:
+              - 'get-versions-from-repo/src/**'
+              - 'get-versions-from-repo/package*.json'
+              - 'get-versions-from-repo/tsconfig*.json'
+
+      - name: Build action list
+        id: list
+        run: |
+          actions='[]'
+          for name in generate-test-matrix get-core-dependencies-action get-supported-versions-action get-versions-action get-versions-from-repo; do
+            if [ "${{ steps.filter.outputs[format('{0}', name)] }}" = "true" ] || [ "${{ github.event_name }}" = "push" ]; then
+              actions=$(echo "$actions" | jq -c --arg n "$name" '. + [$n]')
+            fi
+          done
+          echo "actions=$actions" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test (${{ matrix.action }})
+    needs: changes
+    if: ${{ needs.changes.outputs.actions != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        action: ${{ fromJson(needs.changes.outputs.actions) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.action }}
+        run: npm ci
+
+      - name: Check formatting
+        working-directory: ${{ matrix.action }}
+        run: npm run format:check
+
+      - name: Lint
+        working-directory: ${{ matrix.action }}
+        run: npm run lint
+
+      - name: Test
+        working-directory: ${{ matrix.action }}
+        run: npm run ci-test

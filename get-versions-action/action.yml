@@ -1,0 +1,112 @@
+name: Get core/driver versions from CDI/FDI version
+description: Get core/driver versions from CDI/FDI version
+author: Supertokens
+
+# # Add your action's branding here. This will appear on the GitHub Marketplace.
+# branding:
+#   icon: heart
+#   color: red
+
+inputs:
+  driver-name:
+    description: The driver being used for the code
+    required: true
+
+  cdi-version:
+    description: CDI Version to use
+    required: false
+    default: ''
+
+  core-plan-type:
+    description: The plan for the supertokens core
+    required: false
+    default: FREE
+
+  core-mode:
+    description: The mode for the supertokens core
+    required: false
+    default: DEV
+
+  fdi-version:
+    description: FDI Version to use
+    required: false
+    default: ''
+
+  frontend-mode:
+    description: The mode for the frontend
+    required: false
+    default: DEV
+
+  fetch-frontend-versions:
+    description: Whether to fetch frontend versions
+    required: false
+    default: 'true'
+
+  web-js-interface-version:
+    description: Web JS Interface Version to use
+    required: false
+    default: ''
+
+outputs:
+  coreVersionXy:
+    description:
+      Latest supertokens-core X.Y version corresponding to CDI version
+  coreTag:
+    description:
+      Latest supertokens-core tag corresponding to supertokens-core X.Y version
+  coreVersion:
+    description:
+      Latest supertokens-core X.Y.Z version corresponding to supertokens-core
+      X.Y version
+
+  pluginInterfaceVersionXy:
+    description:
+      Latest supertokens-plugin-interface X.Y version corresponding to
+      supertokens-core X.Y version
+  pluginInterfaceTag:
+    description:
+      Latest supertokens-plugin-interface tag corresponding to
+      supertokens-plugin-interface X.Y version
+  pluginInterfacVersion:
+    description:
+      Latest supertokens-plugin-interface X.Y.Z version corresponding to
+      supertokens-plugin-interface X.Y version
+
+  frontendVersionXy:
+    description:
+      Latest website-frontend X.Y version corresponding to FDI version
+  frontendTag:
+    description:
+      Latest website-frontend tag corresponding to website-frontend X.Y version
+  frontendVersion:
+    description:
+      Latest website-frontend X.Y.Z version corresponding to website-frontend
+      X.Y version
+
+  nodeVersionXy:
+    description:
+      Latest Node X.Y version corresponding to FDI version for use in auth-react
+  nodeTag:
+    description:
+      Latest Node tag corresponding to Node X.Y version for use in auth-react
+
+  authReactVersionXy:
+    description: Latest auth-react X.Y version corresponding to FDI version
+  authReactTag:
+    description: Latest auth-react tag corresponding to auth-react X.Y version
+  authReactVersion:
+    description:
+      Latest auth-react X.Y.Z version corresponding to auth-react X.Y version
+
+  webJsReactVersionXy:
+    description:
+      Latest auth-react X.Y version corresponding to web-js interface version
+  webJsReactTag:
+    description: Latest auth-react tag corresponding to auth-react X.Y version
+  webJsReactVersion:
+    description:
+      Latest auth-react X.Y.Z version corresponding to auth-react X.Y version
+
+runs:
+  using: node24
+  main: dist/index.js

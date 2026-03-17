@@ -1,0 +1,61 @@
+name: Check dist/
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  check-dist:
+    name: Check dist/ (${{ matrix.action }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        action:
+          - generate-test-matrix
+          - get-core-dependencies-action
+          - get-supported-versions-action
+          - get-versions-action
+          - get-versions-from-repo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.action }}
+        run: npm ci
+
+      - name: Build dist/
+        working-directory: ${{ matrix.action }}
+        run: npm run bundle
+
+      - name: Check for uncommitted changes
+        working-directory: ${{ matrix.action }}
+        run: |
+          if [ "$(git diff --ignore-space-at-eol --text dist/ | wc -l)" -gt "0" ]; then
+            echo "::error::Detected uncommitted changes in ${{ matrix.action }}/dist/ after build."
+            echo "Run 'npm run bundle' in ${{ matrix.action }}/ and commit the result."
+            git diff --ignore-space-at-eol --text dist/
+            exit 1
+          fi
+          echo "dist/ is up to date."
+
+      - name: Upload expected dist/ on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.action }}
+          path: ${{ matrix.action }}/dist/

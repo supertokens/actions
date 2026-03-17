@@ -1,0 +1,193 @@
+name: Run supertokens-website tests
+description: |
+  Will clone the `supertokens-website` repo in it's own folder in the workspace directory.
+  Expects:
+  - `node` to be installed.
+  - `supertokens-core` to be running.
+  - An application server running on 8082.
+    - SDK tests require the same server running on 8080 as well.
+
+inputs:
+  version:
+    description: The git ref to clone, usually a version tag
+    required: true
+
+  node-sdk-version:
+    description: The git ref to use for `supertokens-node`, usually a version tag
+    required: true
+
+  check-name-suffix:
+    description: Suffix to append to check names (usually matrix values)
+    required: true
+
+  path:
+    description: Relative path where the repo will be cloned
+    required: false
+    default: supertokens-website
+
+  use-common-app-and-test-server:
+    description: Use the test server as the app server. Required for testing supertokens-website itself.
+    required: false
+    default: 'false'
+
+  start-cross-domain-server:
+    description: Start the cross domain server from the test/server directory. Required for testing supertokens-website itself.
+    required: false
+    default: 'false'
+
+  should-clone:
+    description: Whether the `supertokens-website` repo should be cloned. `false` for testing supertokens-website itself.
+    required: false
+    default: 'true'
+
+  app-server-logs:
+    description: Absolute path of SDK server logs.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+
+  steps:
+    - if: ${{ inputs.should-clone }}
+      uses: actions/checkout@v4
+      with:
+        repository: supertokens/supertokens-website
+        ref: ${{ inputs.version }}
+        path: ${{ inputs.path }}
+
+    # Sets the required envs and NODE_PORT value according to requirements.
+    # SDK tests run the test server on 8081
+    # supertokens-website tests use the same server as both app and test on 8080
+    - name: Setup envs
+      id: envs
+      shell: bash
+      run: |
+        echo "TEST_MODE=testing" | tee -a "$GITHUB_ENV"
+
+        if [ "${{ inputs.use-common-app-and-test-server }}" == 'true' ]; then
+          echo "NODE_PORT=8080" | tee -a "$GITHUB_ENV"
+        else
+          echo "NODE_PORT=8081" | tee -a "$GITHUB_ENV"
+        fi
+
+        REPORT_DIR=${{ github.workspace }}/${{ inputs.path }}/test-report
+        APP_SERVER_LOG_DIR=${{ github.workspace }}/${{ inputs.path }}/test-report/logs/app-server
+        TEST_SERVER_LOG_DIR=${{ github.workspace }}/${{ inputs.path }}/test-report/logs/test-server
+
+        echo "REPORT_DIR=$REPORT_DIR" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        echo "APP_SERVER_LOG_DIR=$APP_SERVER_LOG_DIR" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        echo "TEST_SERVER_LOG_DIR=$TEST_SERVER_LOG_DIR" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+
+        mkdir -p $REPORT_DIR
+        mkdir -p $APP_SERVER_LOG_DIR
+        mkdir -p $TEST_SERVER_LOG_DIR
+
+        # Replace `/` with `__` in check name suffix for artifact names
+        VALID_CHECK_NAME=$(echo '${{ inputs.check-name-suffix }}' | sed "s|/|__|g")
+        echo "VALID_CHECK_NAME=$VALID_CHECK_NAME" | tee -a "$GITHUB_ENV"
+
+    - uses: actions/checkout@v4
+      with:
+        repository: supertokens/supertokens-website
+        ref: ${{ inputs.version }}
+        path: ${{ inputs.path }}
+
+    - name: Setup supertokens-website
+      working-directory: ${{ inputs.path }}
+      shell: bash
+      run: |
+        npm install
+
+    - name: Setup test server
+      working-directory: ${{ inputs.path }}/test/server/
+      shell: bash
+      env:
+        NODE_TAG: ${{ inputs.node-sdk-version }}
+      run: |
+        npm i git+https://github.com:supertokens/supertokens-node.git#$NODE_TAG
+        npm i
+
+        mkdir -p ${{ env.TEST_SERVER_LOG_DIR }}
+
+        node . &> ${{ env.TEST_SERVER_LOG_DIR }}/test-server.log &
+
+        if [ "${{ inputs.start-cross-domain-server }}" == 'true' ]; then
+          NODE_PORT=8082 node . &> ${{ env.TEST_SERVER_LOG_DIR }}/cross-domain-test-server.log &
+        fi
+
+    - name: Wait for servers
+      env:
+        APP_SERVER: 8080
+        CROSS_DOMAIN_APP_SERVER: 8082
+        TEST_SERVER: 8081
+      shell: bash
+      run: |
+        function wait-for() {
+          timeout=90
+
+          until [ $timeout -le 0 ] || (curl -s localhost:$1 &> /dev/null); do
+            echo "Waiting for $2 (${1}) [${timeout}s remaining]"
+            sleep 5
+            timeout=$(( timeout - 5 ))
+          done
+
+          if [ $timeout -le 0 ]; then
+            return 1
+          fi
+        }
+
+        wait-for $APP_SERVER "app server"
+        wait-for $CROSS_DOMAIN_APP_SERVER "cross-domain app server"
+        if [ "${{ inputs.use-common-app-and-test-server }}" == 'false' ]; then
+          wait-for $TEST_SERVER "test server"
+        fi
+
+    - name: Run tests
+      working-directory: ${{ inputs.path }}
+      shell: bash
+      run: |
+        npm test -- --retries 2
+
+    - if: always()
+      name: Fix paths
+      working-directory: ${{ inputs.path }}
+      shell: bash
+      # Doing it in the shell since the Reporter's `transformers` don't seem to work
+      # run: sed -i "s|$GITHUB_WORKSPACE/${{ inputs.path }}/test||g" test-results.xml
+      run: |
+        sed -i "s|${{ github.workspace }}/${{ inputs.path }}/test||g" test-report/test-results.xml
+
+    - if: always() && inputs.app-server-logs != ''
+      name: Copy app server logs
+      shell: bash
+      run: |
+        mkdir -p ${{ env.APP_SERVER_LOG_DIR }}
+        cp -r ${{ inputs.app-server-logs }} ${{ env.APP_SERVER_LOG_DIR }}
+
+    - if: failure()
+      name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Website Tests ${{ env.VALID_CHECK_NAME }}
+        path: ${{ env.REPORT_DIR }}
+
+    - if: always()
+      name: Reporter
+      # Alternative: dorny/test-reporter@v1 - does not create a summary
+      uses: mikepenz/action-junit-report@v5
+      with:
+        report_paths: ${{ inputs.path }}/test-report/test-results.xml
+        check_name: Website Tests ${{ inputs.check-name-suffix }}
+        # Include table with all test results in the summary
+        detailed_summary: true
+        # Skips the summary table if only successful tests were detected.
+        skip_success_summary: true
+        # Group the testcases by test suite in the detailed_summary
+        group_suite: true
+        # Don't fail if no test are found.
+        require_tests: true
+        # Fail the build in case of a test failure.
+        fail_on_failure: true
+        # No annotations will be added to the run
+        skip_annotations: true

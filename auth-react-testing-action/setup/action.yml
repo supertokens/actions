@@ -1,0 +1,166 @@
+name: Setup supertokens-auth-react tests
+description:
+  Clone the `supertokens-auth-react` repo in it's own folder in the workspace directory.
+  Setup the environment and cache it for use in parallel runs.
+  Expects `node` to be installed.
+
+inputs:
+  auth-react-version:
+    description: The git ref to clone, usually a version tag
+    required: true
+
+  node-sdk-version:
+    description: The git ref to use for `supertokens-node`, usually a version tag
+    required: true
+
+  fdi-version:
+    description: The FDI version to test for
+    required: true
+
+  path:
+    description: Relative path where the repo will be cloned
+    required: false
+    default: supertokens-auth-react
+
+  should-clone:
+    description: Whether the `supertokens-auth-react` repo should be cloned
+    required: false
+    default: "true"
+
+  use-common-app-and-test-server:
+    description: Use the same server as the App and Test server. `APP_SERVER` will be set to the same value as `NODE_PORT`.
+    required: false
+    default: "false"
+
+  persist-workspace:
+    description: Whether to persist the workspace as part of the setup. Persist manually if set to false.
+    required: false
+    default: "true"
+
+outputs:
+  AUTH_REACT__LOG_DIR:
+    description: Log directory for various processes
+    value: ${{ steps.envs.outputs.AUTH_REACT__LOG_DIR }}
+
+  AUTH_REACT__SCREENSHOT_DIR:
+    description: Screenshot directory for tests
+    value: ${{ steps.envs.outputs.AUTH_REACT__SCREENSHOT_DIR }}
+
+  AUTH_REACT__APP_SERVER:
+    description: Port for the SDK application server
+    value: ${{ steps.envs.outputs.AUTH_REACT__APP_SERVER }}
+
+  AUTH_REACT__NODE_PORT:
+    description: Port for the auth-react Node test-server
+    value: ${{ steps.envs.outputs.AUTH_REACT__NODE_PORT }}
+
+  AUTH_REACT__TEST_MODE:
+    description: Test mode to use in tests
+    value: ${{ steps.envs.outputs.AUTH_REACT__TEST_MODE }}
+
+  AUTH_REACT__PORT:
+    description: Port for auth-react frontend application
+    value: ${{ steps.envs.outputs.AUTH_REACT__PORT }}
+
+  specs:
+    description: JSON list of test files in the e2e directory
+    value: ${{ steps.envs.outputs.specs }}
+
+runs:
+  using: composite
+
+  steps:
+    - if: ${{ inputs.should-clone }}
+      uses: actions/checkout@v4
+      with:
+        repository: supertokens/supertokens-auth-react
+        ref: ${{ inputs.auth-react-version }}
+        path: ${{ inputs.path }}
+
+    - name: Setup envs
+      id: envs
+      shell: bash
+      run: |
+        echo "AUTH_REACT__LOG_DIR=${{ github.workspace }}/${{ inputs.path }}/test_report/logs" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        echo "AUTH_REACT__SCREENSHOT_DIR=${{ github.workspace }}/${{ inputs.path }}/test_report/screenshots" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+
+        echo "AUTH_REACT__NODE_PORT=8082" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+
+        if [ "${{ inputs.use-common-app-and-test-server }}" == 'true' ]; then
+          echo "AUTH_REACT__APP_SERVER=8082" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        else
+          echo "AUTH_REACT__APP_SERVER=8083" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        fi
+
+        echo "AUTH_REACT__TEST_MODE=testing" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        echo "AUTH_REACT__PORT=3031" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+
+        cd ${{ github.workspace }}/${{ inputs.path }}
+        echo "specs=$(find 'test/end-to-end' -name '*.test.js' -type f | sort | jq -Rsc 'split("\n")[:-1]' | jq -r 'tostring')" | tee -a "$GITHUB_OUTPUT"
+
+        if [ -d ${{ github.workspace }}/${{ inputs.path }}/examples/for-tests-nextjs/ ]; then
+          echo HAS_NEXTJS_EXAMPLES=true | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        else
+          echo HAS_NEXTJS_EXAMPLES=false | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        fi
+
+    - name: Setup auth-react
+      working-directory: ${{ inputs.path }}
+      env:
+        ROOT_DIR: ${{ inputs.path }}
+      shell: bash
+      run: |
+        npm i
+        mkdir -p $AUTH_REACT__LOG_DIR
+        mkdir -p $AUTH_REACT__SCREENSHOT_DIR
+
+    - name: Setup auth-react test server
+      working-directory: ${{ inputs.path }}/test/server/
+      env:
+        # Common
+        APP_SERVER: ${{ env.AUTH_REACT__APP_SERVER }}
+        NODE_PORT: ${{ env.AUTH_REACT__NODE_PORT }}
+        TEST_MODE: ${{ env.AUTH_REACT__TEST_MODE }}
+        # Step-specific
+        NODE_TAG: ${{ inputs.node-sdk-version }}
+      shell: bash
+      run: |
+        npm i git+https://github.com:supertokens/supertokens-node.git#$NODE_TAG
+        npm i
+
+    - name: Setup auth-react frontend application
+      working-directory: ${{ inputs.path }}/examples/for-tests/
+      env:
+        # Common
+        APP_SERVER: ${{ env.AUTH_REACT__APP_SERVER }}
+        NODE_PORT: ${{ env.AUTH_REACT__NODE_PORT }}
+        TEST_MODE: ${{ env.AUTH_REACT__TEST_MODE }}
+        # Step-specific
+        CI: true
+        BROWSER: none
+        PORT: ${{ env.AUTH_REACT__PORT }}
+        REACT_APP_API_PORT: ${{ env.AUTH_REACT__APP_SERVER }}
+      shell: bash
+      run: |
+        npm i
+        npm run prep
+
+    - if: ${{ env.HAS_NEXTJS_EXAMPLES == 'true' || env.HAS_NEXTJS_EXAMPLES == true }}
+      name: Setup auth-react nextjs application
+      working-directory: ${{ inputs.path }}/examples/for-tests-nextjs/
+      env:
+        # Step-specific
+        CI: true
+        BROWSER: none
+        PORT: ${{ env.AUTH_REACT__PORT }}
+        REACT_APP_API_PORT: ${{ env.AUTH_REACT__APP_SERVER }}
+      shell: bash
+      run: |
+        npm i
+        npm run prep
+
+    - if: ${{ inputs.persist-workspace == 'true' || inputs.persist-workspace == true }}
+      uses: bissolli/gh-action-persist-workspace@v2
+      with:
+        action: persist
+        artifactName: auth-react-${{ inputs.fdi-version }}

@@ -1,0 +1,55 @@
+name: Get CDI/FDI versions from files
+description: Get CDI/FDI versions from files
+author: Supertokens
+
+# # Add your action's branding here. This will appear on the GitHub Marketplace.
+# branding:
+#   icon: heart
+#   color: red
+
+inputs:
+  has-cdi:
+    description:
+      Whether the repository contains a coreDriverInterfaceSupported file
+    required: false
+    default: false
+
+  has-fdi:
+    description:
+      Whether the repository contains a frontendDriverInterfaceSupported file
+    required: false
+    default: false
+
+  has-web-js:
+    description: Whether the repository contains a webJsInterfaceSupported file
+    required: false
+    default: false
+
+  has-common:
+    description: Whether the repository contains a supportedVersions file
+    required: false
+    default: false
+
+  working-directory:
+    description: The working directory where the files are located
+    required: false
+    default: ''
+
+outputs:
+  cdiVersions:
+    description: List of CDI versions from the coreDriverInterfaceSupported file
+
+  fdiVersions:
+    description:
+      List of FDI versions from the frontendDriverInterfaceSupported file
+
+  webJsInterfaceVersion:
+    description:
+      The web-js interface version from the webJsInterfaceSupported file
+
+  versions:
+    description: Stringified JSON of the versions file
+
+runs:
+  using: node24
+  main: dist/index.js

@@ -1,0 +1,34 @@
+name: Extended matrix
+description: |
+  Extend run matrixes above Github's 256 limit.
+  Suitable for a two-level nesting.
+
+inputs:
+  artifact-id:
+    required: true
+    description: Identifier to use for uploading a matrix artifact.
+
+  matrix:
+    required: true
+    description: Matrix as a multiline string, same format as a normal matrix definition.
+
+runs:
+  using: composite
+
+  steps:
+    - id: setup-matrix
+      uses: druzsan/setup-matrix@v2
+      with:
+        matrix: ${{ inputs.matrix }}
+
+    - id: extend-matrix
+      shell: bash
+      run: |
+        echo '${{ steps.setup-matrix.outputs.matrix }}' | jq -c -f ${{ github.action_path }}/extend-matrix.jq > ${{ github.action_path }}/matrix-${{ inputs.artifact-id }}.json
+
+    - id: upload-artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: matrix-${{ inputs.artifact-id }}
+        path: ${{ github.action_path }}/matrix-${{ inputs.artifact-id }}.json
+        overwrite: true

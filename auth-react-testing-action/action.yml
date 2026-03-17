@@ -1,0 +1,214 @@
+name: Run supertokens-auth-react tests
+description: |
+  Will clone the `supertokens-auth-react` repo in it's own folder in the workspace directory.
+  Expects:
+  - `node` to be installed.
+  - `auth-react-testing-action/setup` action was run.
+  - `supertokens-core` to be running.
+  - Optionally, an application server to be running on port 8083.
+
+inputs:
+  fdi-version:
+    description: The FDI version to test for
+    required: true
+
+  check-name-suffix:
+    description: Suffix to append to check names (usually matrix values)
+    required: true
+
+  path:
+    description: Relative path where the repo will be cloned
+    required: false
+    default: supertokens-auth-react
+
+  spec:
+    description: Argument to pass to `--spec` in the test run
+
+  retrieve-workspace:
+    description: Whether to retrieve the workspace from the cache. Retrieve manually if set to false.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+
+  steps:
+    - if: ${{ inputs.retrieve-workspace == 'true' || inputs.retrieve-workspace == true }}
+      uses: bissolli/gh-action-persist-workspace@v2
+      with:
+        action: retrieve
+        artifactName: auth-react-${{ inputs.fdi-version }}
+
+    - name: Set testing platform
+      shell: bash
+      run: |
+        if [ -d ${{ inputs.path }}/examples/for-tests-nextjs/ ]; then
+          echo HAS_NEXTJS_EXAMPLES=true | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        else
+          echo HAS_NEXTJS_EXAMPLES=false | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+        fi
+
+        if [[ "${{ inputs.spec }}" == *"nextjs"* ]]; then
+          echo "TESTING_PLATFORM=nextjs" >> $GITHUB_ENV
+        else
+          echo "TESTING_PLATFORM=react" >> $GITHUB_ENV
+        fi
+
+    - if: ${{ env.TESTING_PLATFORM == 'react' }}
+      name: Start auth-react test server
+      working-directory: ${{ inputs.path }}/test/server/
+      env:
+        # Common
+        APP_SERVER: ${{ env.AUTH_REACT__APP_SERVER }}
+        NODE_PORT: ${{ env.AUTH_REACT__NODE_PORT }}
+        TEST_MODE: ${{ env.AUTH_REACT__TEST_MODE }}
+      shell: bash
+      run: node . &> $AUTH_REACT__LOG_DIR/backend.log &
+
+    - if: ${{ env.TESTING_PLATFORM == 'react' }}
+      name: Start auth-react frontend application
+      working-directory: ${{ inputs.path }}/examples/for-tests/
+      env:
+        # Common
+        APP_SERVER: ${{ env.AUTH_REACT__APP_SERVER }}
+        NODE_PORT: ${{ env.AUTH_REACT__NODE_PORT }}
+        TEST_MODE: ${{ env.AUTH_REACT__TEST_MODE }}
+        # Step-specific
+        CI: true
+        BROWSER: none
+        PORT: ${{ env.AUTH_REACT__PORT }}
+        REACT_APP_API_PORT: ${{ env.AUTH_REACT__APP_SERVER }}
+      shell: bash
+      run: npx react-scripts start &> $AUTH_REACT__LOG_DIR/frontend.log &
+
+    - if: ${{ env.TESTING_PLATFORM == 'nextjs' }}
+      name: Start auth-react nextjs server
+      working-directory: ${{ inputs.path }}/examples/for-tests-nextjs/
+      env:
+        # Common
+        APP_SERVER: ${{ env.AUTH_REACT__APP_SERVER }}
+        # Step-specific
+        CI: true
+        PORT: ${{ env.AUTH_REACT__PORT }}
+      shell: bash
+      run: |
+        if [ "$TESTING_PLATFORM" == "nextjs" ]; then
+          if [ "$HAS_NEXTJS_EXAMPLES" == "true" ]; then
+            npm run dev &> $AUTH_REACT__LOG_DIR/frontend.log &
+          else
+            echo "nextjs test found but examples not found."
+            exit 1
+          fi
+        fi
+
+    - name: Wait for servers
+      env:
+        APP_SERVER: ${{ env.AUTH_REACT__APP_SERVER }}
+        NODE_PORT: ${{ env.AUTH_REACT__NODE_PORT }}
+        PORT: ${{ env.AUTH_REACT__PORT }}
+        TESTING_PLATFORM: ${{ env.TESTING_PLATFORM }}
+      shell: bash
+      run: |
+        function wait-for() {
+          timeout=90
+
+          until [ $timeout -le 0 ] || (curl -s localhost:$1 &> /dev/null); do
+            echo "Waiting for $2 (${1}) [${timeout}s remaining]"
+            sleep 5
+            timeout=$(( timeout - 5 ))
+          done
+
+          if [ $timeout -le 0 ]; then
+            return 1
+          fi
+        }
+
+        wait-for $PORT "frontend"
+
+        if [ "$TESTING_PLATFORM" = "react" ]; then
+          wait-for $NODE_PORT "test server"
+          wait-for $APP_SERVER "app server"
+        fi
+
+
+        timeout=10
+        until [ $timeout -le 0 ] || (curl -s localhost:$1 &> /dev/null); do
+          echo "Explicit wait to ensure things work fine [${timeout}s remaining]"
+          sleep 5
+          timeout=$(( timeout - 5 ))
+        done
+
+    - name: Run tests
+      working-directory: ${{ inputs.path }}
+      env:
+        # Common
+        APP_SERVER: ${{ env.AUTH_REACT__APP_SERVER }}
+        NODE_PORT: ${{ env.AUTH_REACT__NODE_PORT }}
+        TEST_MODE: ${{ env.AUTH_REACT__TEST_MODE }}
+        # Step-specific
+        SCREENSHOT_ROOT: ${{ env.AUTH_REACT__SCREENSHOT_DIR }}
+        SPEC: ${{ inputs.spec }}
+      shell: bash
+      run: |
+        set +e
+
+        tries=0
+        max_tries=3
+        command="npx mocha --spec $SPEC"
+
+        while true; do
+          tries=$((tries + 1))
+          echo "Running '$command' [Try $tries/$max_tries]"
+
+          $command
+
+          exit_code=$?
+          if [[ $exit_code -ne 0 && $tries -lt $max_tries ]]; then
+            echo -e "\n\n\n"
+          else
+            exit $exit_code
+          fi
+
+        done
+
+    - if: always()
+      name: Fix paths
+      working-directory: ${{ inputs.path }}
+      shell: bash
+      run: |
+        # Doing it in the shell since the Reporter's `transformers` don't seem to work
+        sed -i "s|${{ github.workspace }}/${{ inputs.path }}/test||g" test_report/test-results.xml
+
+        # Make mochawesome screenshot paths relative. Workaround till we update it in auth-react.
+        sed -i "s|$AUTH_REACT__SCREENSHOT_DIR|../screenshots|g" test_report/mochawesome/mochawesome.html
+
+        # Replace `/` with `__` in check name suffix for artifact names
+        VALID_CHECK_NAME=$(echo '${{ inputs.check-name-suffix }}' | sed "s|/|__|g")
+        echo "VALID_CHECK_NAME=$VALID_CHECK_NAME" | tee -a "$GITHUB_ENV"
+
+    - if: failure()
+      name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Auth React Tests ${{ env.VALID_CHECK_NAME }}
+        path: ${{ inputs.path }}/test_report
+
+    - if: always()
+      name: Reporter
+      # Alternative: dorny/test-reporter@v1 - does not create a summary
+      uses: mikepenz/action-junit-report@v5
+      with:
+        report_paths: ${{ inputs.path }}/test_report/test-results.xml
+        check_name: Auth React Tests ${{ inputs.check-name-suffix }}
+        # Include table with all test results in the summary
+        detailed_summary: true
+        # Skips the summary table if only successful tests were detected.
+        skip_success_summary: true
+        # Group the testcases by test suite in the detailed_summary
+        group_suite: true
+        # Don't fail if no test are found.
+        require_tests: false
+        # Fail the build in case of a test failure.
+        fail_on_failure: true
+        # No annotations will be added to the run
+        skip_annotations: true
