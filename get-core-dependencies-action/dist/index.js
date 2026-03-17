@@ -27473,7 +27473,8 @@ const execAsync = promisify(exec$1);
 async function getBranchForVersion(repo, version) {
     console.log(`Processing ${repo}`);
     const repoUrl = `https://github.com/${repo}.git`;
-    const tempDir = `./temp`;
+    const repoSlug = repo.replace(/\//g, '-');
+    const tempDir = `./temp-${repoSlug}`;
     // Clone the repository
     await execAsync(`git clone ${repoUrl} ${tempDir}`);
     // Fetch all remote branches
@@ -27521,6 +27522,7 @@ async function getBranchForVersion(repo, version) {
             }
         }
         catch (e) {
+            console.log(`Error checking branch ${branch}: ${e instanceof Error ? e.message : String(e)}`);
             continue;
         }
     }
@@ -27528,15 +27530,23 @@ async function getBranchForVersion(repo, version) {
     throw new Error(`No matching branch found for ${repo} with plugin interface version ${version}`);
 }
 async function runForAddDevTag() {
-    const coreVersion = coreExports.getInput('core-version');
-    const pluginInterfaceVersion = coreExports.getInput('plugin-interface-version');
-    const postgresqlPluginVersion = coreExports.getInput('postgresql-plugin-version');
-    const branches = {};
-    branches['core'] = await getBranchForVersion('supertokens/supertokens-core', coreVersion);
-    branches['plugin-interface'] = await getBranchForVersion('supertokens/supertokens-plugin-interface', pluginInterfaceVersion);
-    branches['postgresql'] = await getBranchForVersion('supertokens/supertokens-postgresql-plugin', postgresqlPluginVersion);
-    console.log(`Branches: ${JSON.stringify(branches, null, 2)}`);
-    coreExports.setOutput('branches', JSON.stringify(branches));
+    try {
+        const coreVersion = coreExports.getInput('core-version');
+        const pluginInterfaceVersion = coreExports.getInput('plugin-interface-version');
+        const postgresqlPluginVersion = coreExports.getInput('postgresql-plugin-version');
+        const branches = {};
+        branches['core'] = await getBranchForVersion('supertokens/supertokens-core', coreVersion);
+        branches['plugin-interface'] = await getBranchForVersion('supertokens/supertokens-plugin-interface', pluginInterfaceVersion);
+        branches['postgresql'] = await getBranchForVersion('supertokens/supertokens-postgresql-plugin', postgresqlPluginVersion);
+        console.log(`Branches: ${JSON.stringify(branches, null, 2)}`);
+        coreExports.setOutput('branches', JSON.stringify(branches));
+    }
+    catch (error) {
+        if (error instanceof Error)
+            coreExports.setFailed(error.message);
+        else
+            coreExports.setFailed(String(error));
+    }
 }
 
 async function run() {

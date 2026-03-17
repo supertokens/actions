@@ -1,18 +1,10 @@
 {
-  "name": "typescript-action",
-  "description": "GitHub Actions TypeScript template",
+  "name": "get-core-dependencies-action",
+  "description": "Find core dependency branches of plugin-interface and plugins",
   "version": "0.0.0",
-  "author": "",
+  "author": "SuperTokens",
   "type": "module",
   "private": true,
-  "homepage": "https://github.com/actions/typescript-action",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/actions/typescript-action.git"
-  },
-  "bugs": {
-    "url": "https://github.com/actions/typescript-action/issues"
-  },
   "keywords": [
     "actions"
   ],
@@ -37,8 +29,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@actions/core": "^1.11.1",
-    "@octokit/rest": "^20.0.2"
+    "@actions/core": "^1.11.1"
   },
   "devDependencies": {
     "@eslint/compat": "^1.2.7",

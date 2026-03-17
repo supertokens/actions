@@ -79,9 +79,9 @@ runs:
         echo "APP_SERVER_LOG_DIR=$APP_SERVER_LOG_DIR" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
         echo "TEST_SERVER_LOG_DIR=$TEST_SERVER_LOG_DIR" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
 
-        mkdir -p $REPORT_DIR
-        mkdir -p $APP_SERVER_LOG_DIR
-        mkdir -p $TEST_SERVER_LOG_DIR
+        mkdir -p "$REPORT_DIR"
+        mkdir -p "$APP_SERVER_LOG_DIR"
+        mkdir -p "$TEST_SERVER_LOG_DIR"
 
         # Replace `/` with `__` in check name suffix for artifact names
         VALID_CHECK_NAME=$(echo '${{ inputs.check-name-suffix }}' | sed "s|/|__|g")
@@ -169,7 +169,7 @@ runs:
     - if: always()
       name: Reporter
       # Alternative: dorny/test-reporter@v1 - does not create a summary
-      uses: mikepenz/action-junit-report@v5
+      uses: mikepenz/action-junit-report@3585e95 # v5
       with:
         report_paths: ${{ inputs.path }}/test-report/test-results.xml
         check_name: Website Tests ${{ inputs.check-name-suffix }}

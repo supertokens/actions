@@ -57,17 +57,19 @@ async function fetchWithApiKey({
   description: string
   outputKey: string
 }) {
-  const apiKey = process.env.SUPERTOKENS_API_KEY as string
+  const apiKey = process.env.SUPERTOKENS_API_KEY
+  if (!apiKey) {
+    throw new Error('SUPERTOKENS_API_KEY environment variable is not set')
+  }
 
-  const queryParams = new URLSearchParams({
-    password: apiKey,
-    ...params
-  })
+  const queryParams = new URLSearchParams(params)
 
   const urlObj = new URL(url)
   urlObj.search = queryParams.toString()
 
-  const response = await fetch(urlObj)
+  const response = await fetch(urlObj, {
+    headers: { 'api-version': '0', Authorization: `Bearer ${apiKey}` }
+  })
 
   if (!response.ok) {
     throw ErrorFactory(
@@ -85,7 +87,7 @@ async function fetchWithApiKey({
     throw ErrorFactory(
       params,
       description,
-      `${data} in response ${responseData}`,
+      `Missing key '${outputKey}' in response ${JSON.stringify(responseData)}`,
       response.status
     )
   }

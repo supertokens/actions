@@ -27270,20 +27270,22 @@ function ErrorFactory(params, dataDescription, response, statusCode) {
 }
 async function fetchWithApiKey({ url, params, description, outputKey }) {
     const apiKey = process.env.SUPERTOKENS_API_KEY;
-    const queryParams = new URLSearchParams({
-        password: apiKey,
-        ...params
-    });
+    if (!apiKey) {
+        throw new Error('SUPERTOKENS_API_KEY environment variable is not set');
+    }
+    const queryParams = new URLSearchParams(params);
     const urlObj = new URL(url);
     urlObj.search = queryParams.toString();
-    const response = await fetch(urlObj);
+    const response = await fetch(urlObj, {
+        headers: { 'api-version': '0', Authorization: `Bearer ${apiKey}` }
+    });
     if (!response.ok) {
         throw ErrorFactory(params, description, await response.text(), response.status);
     }
     const responseData = (await response.json());
     const data = responseData[outputKey];
     if (!data) {
-        throw ErrorFactory(params, description, `${data} in response ${responseData}`, response.status);
+        throw ErrorFactory(params, description, `Missing key '${outputKey}' in response ${JSON.stringify(responseData)}`, response.status);
     }
     return data;
 }

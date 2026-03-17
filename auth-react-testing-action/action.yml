@@ -34,7 +34,7 @@ runs:
 
   steps:
     - if: ${{ inputs.retrieve-workspace == 'true' || inputs.retrieve-workspace == true }}
-      uses: bissolli/gh-action-persist-workspace@v2
+      uses: bissolli/gh-action-persist-workspace@d3138eb # v2
       with:
         action: retrieve
         artifactName: auth-react-${{ inputs.fdi-version }}
@@ -131,12 +131,9 @@ runs:
         fi
 
 
-        timeout=10
-        until [ $timeout -le 0 ] || (curl -s localhost:$1 &> /dev/null); do
-          echo "Explicit wait to ensure things work fine [${timeout}s remaining]"
-          sleep 5
-          timeout=$(( timeout - 5 ))
-        done
+        # Extra wait to ensure servers are fully ready
+        echo "Waiting 10s for servers to stabilize..."
+        sleep 10
 
     - name: Run tests
       working-directory: ${{ inputs.path }}
@@ -196,7 +193,7 @@ runs:
     - if: always()
       name: Reporter
       # Alternative: dorny/test-reporter@v1 - does not create a summary
-      uses: mikepenz/action-junit-report@v5
+      uses: mikepenz/action-junit-report@3585e95 # v5
       with:
         report_paths: ${{ inputs.path }}/test_report/test-results.xml
         check_name: Auth React Tests ${{ inputs.check-name-suffix }}
