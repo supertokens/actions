@@ -17,7 +17,7 @@ runs:
 
   steps:
     - id: setup-matrix
-      uses: druzsan/setup-matrix@7acf839 # v2
+      uses: druzsan/setup-matrix@7acf8392187d61b8e5de3f5a0dcd3e483f5c4e4f # v2
       with:
         matrix: ${{ inputs.matrix }}
 

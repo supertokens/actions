@@ -34,7 +34,7 @@ runs:
 
   steps:
     - if: ${{ inputs.retrieve-workspace == 'true' || inputs.retrieve-workspace == true }}
-      uses: bissolli/gh-action-persist-workspace@d3138eb # v2
+      uses: bissolli/gh-action-persist-workspace@d3138eb8e28e7f560ed394221580be46c21280a8 # v2
       with:
         action: retrieve
         artifactName: auth-react-${{ inputs.fdi-version }}
@@ -193,7 +193,7 @@ runs:
     - if: always()
       name: Reporter
       # Alternative: dorny/test-reporter@v1 - does not create a summary
-      uses: mikepenz/action-junit-report@3585e95 # v5
+      uses: mikepenz/action-junit-report@3585e9575db828022551b4231f165eb59a0e74e3 # v5
       with:
         report_paths: ${{ inputs.path }}/test_report/test-results.xml
         check_name: Auth React Tests ${{ inputs.check-name-suffix }}

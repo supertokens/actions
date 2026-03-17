@@ -160,7 +160,7 @@ runs:
         npm run prep
 
     - if: ${{ inputs.persist-workspace == 'true' || inputs.persist-workspace == true }}
-      uses: bissolli/gh-action-persist-workspace@d3138eb # v2
+      uses: bissolli/gh-action-persist-workspace@d3138eb8e28e7f560ed394221580be46c21280a8 # v2
       with:
         action: persist
         artifactName: auth-react-${{ inputs.fdi-version }}
