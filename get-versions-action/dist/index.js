@@ -27510,17 +27510,11 @@ async function run() {
     }
 }
 
-/**
- * The entrypoint for the action. This file simply imports and runs the action's
- * main logic.
- */
-try {
-    /* istanbul ignore next */
-    run();
-}
-catch (error) {
-    // Fail the workflow run if an error occurs
+/* istanbul ignore next */
+run().catch((error) => {
     if (error instanceof Error)
         coreExports.setFailed(error.message);
-}
+    else
+        coreExports.setFailed(String(error));
+});
 //# sourceMappingURL=index.js.map

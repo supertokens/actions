@@ -52,7 +52,10 @@ export async function run() {
   }
 
   if (inputs.hasCommon) {
-    const commonFile = await fs.readFile('supportedVersions.json', 'utf-8')
+    const commonFile = await fs.readFile(
+      `${basePath}supportedVersions.json`,
+      'utf-8'
+    )
     const versions = JSON.parse(commonFile)
 
     core.info(`versions=${versions}`)

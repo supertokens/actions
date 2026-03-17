@@ -1,8 +1,8 @@
-/**
- * The entrypoint for the action. This file simply imports and runs the action's
- * main logic.
- */
+import * as core from '@actions/core'
 import { run } from './main.js'
 
 /* istanbul ignore next */
-run()
+run().catch((error: unknown) => {
+  if (error instanceof Error) core.setFailed(error.message)
+  else core.setFailed(String(error))
+})

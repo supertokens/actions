@@ -1,14 +1,8 @@
-/**
- * The entrypoint for the action. This file simply imports and runs the action's
- * main logic.
- */
 import * as core from '@actions/core'
 import { run } from './main.js'
 
-try {
-  /* istanbul ignore next */
-  run()
-} catch (error) {
-  // Fail the workflow run if an error occurs
+/* istanbul ignore next */
+run().catch((error: unknown) => {
   if (error instanceof Error) core.setFailed(error.message)
-}
+  else core.setFailed(String(error))
+})

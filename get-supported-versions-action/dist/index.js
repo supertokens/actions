@@ -27279,24 +27279,18 @@ async function run() {
         coreExports.setOutput('webJsInterfaceVersion', webJsInterfaceVersion);
     }
     if (inputs.hasCommon) {
-        const commonFile = await promises.readFile('supportedVersions.json', 'utf-8');
+        const commonFile = await promises.readFile(`${basePath}supportedVersions.json`, 'utf-8');
         const versions = JSON.parse(commonFile);
         coreExports.info(`versions=${versions}`);
         coreExports.setOutput('versions', JSON.stringify(versions));
     }
 }
 
-/**
- * The entrypoint for the action. This file simply imports and runs the action's
- * main logic.
- */
-try {
-    /* istanbul ignore next */
-    run();
-}
-catch (error) {
-    // Fail the workflow run if an error occurs
+/* istanbul ignore next */
+run().catch((error) => {
     if (error instanceof Error)
         coreExports.setFailed(error.message);
-}
+    else
+        coreExports.setFailed(String(error));
+});
 //# sourceMappingURL=index.js.map

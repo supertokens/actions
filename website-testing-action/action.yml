@@ -87,12 +87,6 @@ runs:
         VALID_CHECK_NAME=$(echo '${{ inputs.check-name-suffix }}' | sed "s|/|__|g")
         echo "VALID_CHECK_NAME=$VALID_CHECK_NAME" | tee -a "$GITHUB_ENV"
 
-    - uses: actions/checkout@v4
-      with:
-        repository: supertokens/supertokens-website
-        ref: ${{ inputs.version }}
-        path: ${{ inputs.path }}
-
     - name: Setup supertokens-website
       working-directory: ${{ inputs.path }}
       shell: bash
@@ -105,7 +99,7 @@ runs:
       env:
         NODE_TAG: ${{ inputs.node-sdk-version }}
       run: |
-        npm i git+https://github.com:supertokens/supertokens-node.git#$NODE_TAG
+        npm i git+https://github.com/supertokens/supertokens-node.git#$NODE_TAG
         npm i
 
         mkdir -p ${{ env.TEST_SERVER_LOG_DIR }}

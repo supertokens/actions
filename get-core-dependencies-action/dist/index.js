@@ -27552,10 +27552,11 @@ async function run() {
     }
 }
 
-/**
- * The entrypoint for the action. This file simply imports and runs the action's
- * main logic.
- */
 /* istanbul ignore next */
-run();
+run().catch((error) => {
+    if (error instanceof Error)
+        coreExports.setFailed(error.message);
+    else
+        coreExports.setFailed(String(error));
+});
 //# sourceMappingURL=index.js.map
