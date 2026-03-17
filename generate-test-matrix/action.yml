@@ -1,0 +1,96 @@
+name: Generate Test Matrix
+description: >
+  Builds a deduplicated test matrix by resolving local interface versions
+  (CDI/FDI) to the upstream branches where those versions are the latest, then
+  applying boundary or primary-full strategies across extra axes.
+author: Supertokens
+inputs:
+  github-token:
+    description: GitHub token for cloning upstream repos.
+    required: true
+
+  include-cdi:
+    description:
+      Vary the CDI/core axis (reads coreDriverInterfaceSupported.json).
+    required: false
+    default: 'false'
+
+  include-fdi:
+    description:
+      Vary the FDI axis (reads frontendDriverInterfaceSupported.json).
+    required: false
+    default: 'false'
+
+  upstream-fdi-repos:
+    description: >
+      JSON array of repo names to resolve FDI against. The first entry is the
+      primary and drives matrix row selection; others provide companion branch
+      lookups only. Default: '["supertokens-node"]'.
+    required: false
+    default: '["supertokens-node"]'
+
+  strategy:
+    description: >
+      'boundary'      — all FDI reps × latest CDI  +  other CDI × latest FDI.
+      'primary-full'  — full CDI × FDI cross-product. Extra axes are always
+      boundary-reduced, but only on the latest interface cell.
+    required: false
+    default: boundary
+
+  extra-axes:
+    description: >
+      JSON object of additional matrix axes and their values. e.g.
+      '{"py-version":["3.8","3.13"],"framework":["fastapi","flask"]}'
+    required: false
+    default: '{}'
+
+  latest-extra:
+    description: >
+      JSON object pinning the "latest" value per extra axis. Defaults to the
+      last element of each axis list. e.g.
+      '{"py-version":"3.13","framework":"fastapi"}'
+    required: false
+    default: '{}'
+
+  working-directory:
+    description: >
+      Path to the repo root containing the *InterfaceSupported.json files.
+      Defaults to the current working directory.
+    required: false
+    default: '.'
+
+outputs:
+  testMatrix:
+    description: >
+      JSON object ready for use as a GitHub Actions strategy matrix:
+      {"include":[{"fdi-version":"4.2","cdi-version":"5.4",...},...]}
+
+  coreCdiVersionMap:
+    description: >
+      JSON object mapping each CDI representative version to the
+      supertokens-core branch that should be checked out for that version. e.g.
+      {"5.4":"master","5.3":"11.3"}
+
+  fdiVersionMap:
+    description: >
+      JSON object mapping each upstream FDI repo to a map of FDI representative
+      version → branch name. e.g.
+      {"supertokens-node":{"4.2":"master"},"supertokens-website":{"4.2":"master"}}
+
+  fdiVersions:
+    description: >
+      JSON array of the deduplicated FDI representative versions, in ascending
+      order. e.g. ["1.19","2.0","3.0","4.1","4.2"] Useful when you need to
+      iterate over FDI versions separately from the full matrix (e.g. to key
+      setup artifacts per FDI before expanding extra axes).
+
+  extraAxes:
+    description: >
+      The extra-axes input echoed back as a JSON object. e.g.
+      {"py-version":["3.13"],"framework":["fastapi","flask"]} Useful for passing
+      axis values to downstream steps (e.g. extended-matrix-action) without
+      duplicating the list in the workflow.
+
+runs:
+  using: node24
+  main: dist/index.js
