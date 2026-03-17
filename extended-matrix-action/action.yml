@@ -24,11 +24,11 @@ runs:
     - id: extend-matrix
       shell: bash
       run: |
-        echo '${{ steps.setup-matrix.outputs.matrix }}' | jq -c -f ${{ github.action_path }}/extend-matrix.jq > ${{ github.action_path }}/matrix-${{ inputs.artifact-id }}.json
+        echo '${{ steps.setup-matrix.outputs.matrix }}' | jq -c -f "${{ github.action_path }}/extend-matrix.jq" > "${{ runner.temp }}/matrix-${{ inputs.artifact-id }}.json"
 
     - id: upload-artifact
       uses: actions/upload-artifact@v4
       with:
         name: matrix-${{ inputs.artifact-id }}
-        path: ${{ github.action_path }}/matrix-${{ inputs.artifact-id }}.json
+        path: ${{ runner.temp }}/matrix-${{ inputs.artifact-id }}.json
         overwrite: true

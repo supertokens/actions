@@ -125,7 +125,7 @@ runs:
         NODE_TAG: ${{ inputs.node-sdk-version }}
       shell: bash
       run: |
-        npm i git+https://github.com:supertokens/supertokens-node.git#$NODE_TAG
+        npm i git+https://github.com/supertokens/supertokens-node.git#$NODE_TAG
         npm i
 
     - name: Setup auth-react frontend application
