@@ -1,18 +1,10 @@
 {
   "name": "get-versions-from-repo",
-  "description": "Get latest version of a repo that supports any particular CDI, FDI, WJI",
+  "description": "Get CDI/FDI versions from upstream repo branches",
   "version": "0.0.0",
-  "author": "",
+  "author": "SuperTokens",
   "type": "module",
   "private": true,
-  "homepage": "https://github.com/actions/typescript-action",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/actions/typescript-action.git"
-  },
-  "bugs": {
-    "url": "https://github.com/actions/typescript-action/issues"
-  },
   "keywords": [
     "actions"
   ],

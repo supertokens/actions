@@ -1,18 +1,10 @@
 {
   "name": "get-supported-versions-action",
-  "description": "Get supported CDI/FDI/other versions from files in a local checkout",
+  "description": "Get CDI/FDI versions from local interface files",
   "version": "0.0.0",
-  "author": "",
+  "author": "SuperTokens",
   "type": "module",
   "private": true,
-  "homepage": "https://github.com/actions/typescript-action",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/actions/typescript-action.git"
-  },
-  "bugs": {
-    "url": "https://github.com/actions/typescript-action/issues"
-  },
   "keywords": [
     "actions"
   ],

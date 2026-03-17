@@ -1,18 +1,10 @@
 {
   "name": "get-versions-action",
-  "description": "Get various versions from CDI/FDI version",
+  "description": "Get core/driver versions from CDI/FDI version",
   "version": "0.0.0",
-  "author": "",
+  "author": "SuperTokens",
   "type": "module",
   "private": true,
-  "homepage": "https://github.com/actions/typescript-action",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/actions/typescript-action.git"
-  },
-  "bugs": {
-    "url": "https://github.com/actions/typescript-action/issues"
-  },
   "keywords": [
     "actions"
   ],
