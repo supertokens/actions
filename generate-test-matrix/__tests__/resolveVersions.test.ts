@@ -63,6 +63,24 @@ describe('resolveVersions', () => {
     expect(core.warning).toHaveBeenCalled()
   })
 
+  it('resolves exact match for gap-filled versions (not any branch max)', () => {
+    // Simulates CDI 3.1 added to the inverse map via gap-filling:
+    // 3.0 and 4.0 are max-based entries from older branches, while 3.1
+    // was gap-filled from a newer branch (9.3) that has it in its
+    // supported list but whose max is higher (e.g. 5.1).
+    const inverseMap = {
+      '3.0': '6.0',
+      '3.1': '9.3', // gap-filled
+      '4.0': '8.0',
+      '5.0': '9.0',
+      '5.1': '9.3'
+    }
+    const result = resolveVersions(['3.1'], inverseMap)
+    expect(result).toEqual([
+      { version: '3.1', branch: '9.3', isExact: true, covers: ['3.1'] }
+    ])
+  })
+
   it('returns results sorted ascending by version', () => {
     const result = resolveVersions(['3.0', '1.0'], {
       '1.0': '1.0',

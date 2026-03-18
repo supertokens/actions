@@ -33277,6 +33277,8 @@ async function buildInverseMap(repoName, interfaceFile, githubToken, tempDir) {
     const toCheck = [...versionBranches, ...(mainBranch ? [mainBranch] : [])];
     coreExports.info(`  Checking ${toCheck.length} branches: ${toCheck.slice(0, 5).join(', ')}${toCheck.length > 5 ? ', ...' : ''}`);
     const inverseMap = {};
+    // Track every version seen → highest branch, so we can fill gaps later
+    const allVersionsSeen = {};
     for (const branch of toCheck) {
         try {
             await repo.checkout(branch);
@@ -33297,8 +33299,25 @@ async function buildInverseMap(repoName, interfaceFile, githubToken, tempDir) {
         }
         if (versions.length === 0)
             continue;
-        const max = maxOf(versions);
         const isVersionBranch = /^\d+\.\d+$/.test(branch);
+        // Track all versions for gap-filling
+        for (const v of versions) {
+            if (!(v in allVersionsSeen)) {
+                allVersionsSeen[v] = branch;
+            }
+            else {
+                const existingIsVersion = /^\d+\.\d+$/.test(allVersionsSeen[v]);
+                if (isVersionBranch && existingIsVersion) {
+                    if (cmpSemver(branch, allVersionsSeen[v]) > 0) {
+                        allVersionsSeen[v] = branch;
+                    }
+                }
+                else if (isVersionBranch && !existingIsVersion) {
+                    allVersionsSeen[v] = branch;
+                }
+            }
+        }
+        const max = maxOf(versions);
         const existingIsVersion = max in inverseMap && /^\d+\.\d+$/.test(inverseMap[max]);
         if (!(max in inverseMap)) {
             inverseMap[max] = branch;
@@ -33314,6 +33333,15 @@ async function buildInverseMap(repoName, interfaceFile, githubToken, tempDir) {
             inverseMap[max] = branch;
         }
         // else: keep existing (version branch or first-seen main/master)
+    }
+    // Fill in versions that appear in some branch's supported list but are
+    // never any branch's max. This handles versions introduced in newer
+    // branches with a number falling between older max versions (e.g., CDI
+    // 3.1 added in core 9.3 but sitting between CDI 3.0→6.0 and 4.0→8.0).
+    for (const [v, b] of Object.entries(allVersionsSeen)) {
+        if (!(v in inverseMap)) {
+            inverseMap[v] = b;
+        }
     }
     const sortedEntries = Object.entries(inverseMap).sort(([a], [b]) => cmpSemver(a, b));
     coreExports.info(`  Inverse map (max_interface → branch):`);
