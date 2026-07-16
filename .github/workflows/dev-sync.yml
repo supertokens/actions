@@ -1,0 +1,216 @@
+# Reusable dev-sync: keep a release PR in sync with dev.
+# Consolidates the dev-sync.yml previously copied (with variations) across repos.
+#
+# On every push to dev (trigger lives in the caller), computes the next version
+# from unreleased changie fragments and creates or force-updates a release PR:
+#
+#   release/vX.Y.Z  ->  X.Y  (version branch)
+#
+# Usage (caller file, .github/workflows/dev-sync.yml in each repo):
+#
+#   name: "Sync Dev to Version Branch"
+#   on:
+#     push:
+#       branches: [dev]
+#     workflow_dispatch:
+#       inputs:
+#         bump:
+#           description: "Override bump type (default: auto — inferred from change kinds)"
+#           type: choice
+#           default: auto
+#           options: [auto, minor, patch]
+#   permissions:
+#     contents: write
+#     pull-requests: write
+#   jobs:
+#     sync:
+#       uses: supertokens/actions/.github/workflows/dev-sync.yml@main
+#       secrets: inherit
+#       with:
+#         bump: ${{ inputs.bump || 'auto' }}
+#         prepare: |
+#           npm ci
+#           npm run build
+#         add_paths: ".changes/ CHANGELOG.md package.json lib/build/"
+#         version_check_hint: '\`package.json\`'
+#         post_merge_note: 'trigger the [Release Pipeline](../actions/workflows/pipeline-release-tag.yml) with branch \`${target_branch}\`.'
+#
+# Note: version_check_hint and post_merge_note are inserted into a heredoc
+# inside a $( ) command substitution — escape backticks as \` and you may
+# reference ${version} and ${target_branch}.
+#
+name: "Sync Dev to Version Branch (reusable)"
+
+on:
+  workflow_call:
+    inputs:
+      bump:
+        description: "Bump type: auto (inferred from change kinds), minor or patch"
+        type: string
+        default: auto
+      prepare:
+        description: "Ecosystem release-prep commands, run after changie batch/merge, before git add"
+        type: string
+        default: ""
+      python_version:
+        description: "If non-empty, run actions/setup-python@v5 with this version before `prepare`"
+        type: string
+        default: ""
+      add_paths:
+        description: "What to stage for the release commit"
+        type: string
+        default: ".changes/ CHANGELOG.md"
+      version_check_hint:
+        description: "PR checklist: where the reviewer verifies the version"
+        type: string
+        default: "the repo version file(s)"
+      post_merge_note:
+        description: "PR body: what happens after merging"
+        type: string
+        default: "trigger the Release Pipeline for the target version branch"
+    secrets:
+      ALL_REPO_PAT:
+        required: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.ALL_REPO_PAT }}
+
+      - name: Setup git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --all --tags
+
+      - uses: miniscruff/changie-action@v2
+        with:
+          version: latest
+
+      - name: Compute next version
+        id: next
+        run: |
+          bump="${{ inputs.bump || 'auto' }}"
+
+          if ! raw_version=$(changie next $bump 2>&1); then
+            echo "changie next returned: $raw_version"
+            echo "No bumpable fragments found. Skipping sync."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          version="${raw_version#v}"
+          version_branch=$(echo "$version" | grep -oE '^[0-9]+\.[0-9]+')
+
+          echo "version=$version"               >> $GITHUB_OUTPUT
+          echo "version_branch=$version_branch" >> $GITHUB_OUTPUT
+          echo "pr_branch=release/v$version"    >> $GITHUB_OUTPUT
+
+      - name: Create version branch if it doesn't exist
+        if: steps.next.outputs.skip != 'true'
+        run: |
+          version_branch="${{ steps.next.outputs.version_branch }}"
+
+          if ! git show-ref --verify --quiet "refs/remotes/origin/$version_branch"; then
+            git checkout -b "$version_branch"
+            git push origin "$version_branch"
+            echo "Created new version branch: $version_branch"
+          else
+            echo "Version branch $version_branch already exists."
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.next.outputs.skip != 'true' && inputs.python_version != ''
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Build release branch
+        if: steps.next.outputs.skip != 'true'
+        run: |
+          pr_branch="${{ steps.next.outputs.pr_branch }}"
+          version_branch="${{ steps.next.outputs.version_branch }}"
+          version="${{ steps.next.outputs.version }}"
+
+          if git show-ref --verify --quiet "refs/remotes/origin/$pr_branch"; then
+            git checkout "$pr_branch"
+            git reset --hard "origin/$version_branch"
+          else
+            git checkout -b "$pr_branch" "origin/$version_branch"
+          fi
+
+          git merge origin/dev --no-edit -X theirs
+
+          changie batch "v$version"
+          changie merge
+
+      - name: Run release prep
+        if: steps.next.outputs.skip != 'true' && inputs.prepare != ''
+        run: ${{ inputs.prepare }}
+
+      - name: Commit and push release branch
+        if: steps.next.outputs.skip != 'true'
+        run: |
+          pr_branch="${{ steps.next.outputs.pr_branch }}"
+          version="${{ steps.next.outputs.version }}"
+
+          git add ${{ inputs.add_paths }}
+          git diff --staged --quiet \
+            || git commit -m "chore: prepare release v$version"
+
+          git push origin "$pr_branch" --force
+
+      - name: Create or update pull request
+        if: steps.next.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.ALL_REPO_PAT }}
+        run: |
+          version="${{ steps.next.outputs.version }}"
+          pr_branch="${{ steps.next.outputs.pr_branch }}"
+          target_branch="${{ steps.next.outputs.version_branch }}"
+
+          pr_number=$(gh pr list \
+            --base "$target_branch" \
+            --head "$pr_branch" \
+            --json number \
+            --jq '.[0].number')
+
+          notes=$(sed '1d' ".changes/v${version}.md" | sed '/./,$!d')
+
+          body=$(cat <<EOF
+          ## Release v${version}
+
+          This PR is automatically kept in sync with \`dev\`. It will be force-updated on every push to \`dev\`.
+
+          **Review checklist:**
+          - [ ] Version \`${version}\` is correct (check ${{ inputs.version_check_hint }})
+          - [ ] Changelog entries below are accurate and complete
+
+          **After merging:** ${{ inputs.post_merge_note }}
+
+          ---
+
+          ${notes}
+          EOF
+          )
+
+          if [[ -n "$pr_number" ]]; then
+            gh pr edit "$pr_number" \
+              --title "chore: prepare release v${version}" \
+              --body "$body" \
+              --add-label "run-tests"
+            echo "Updated PR #$pr_number"
+          else
+            gh pr create \
+              --base "$target_branch" \
+              --head "$pr_branch" \
+              --title "chore: prepare release v${version}" \
+              --body "$body" \
+              --label "run-tests,Skip-Changelog"
+            echo "Created new release PR"
+          fi
