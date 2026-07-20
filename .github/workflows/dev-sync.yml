@@ -69,7 +69,7 @@ on:
         type: string
         default: "trigger the Release Pipeline for the target version branch"
     secrets:
-      ALL_REPO_PAT:
+      RELEASE_APP_PRIVATE_KEY:
         required: true
 
 jobs:
@@ -77,11 +77,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: supertokens
+          repositories: ${{ github.event.repository.name }}
+
       - uses: actions/checkout@v4
         with:
           ref: dev
           fetch-depth: 0
-          token: ${{ secrets.ALL_REPO_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup git
         run: |
@@ -168,7 +176,7 @@ jobs:
       - name: Create or update pull request
         if: steps.next.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.ALL_REPO_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           version="${{ steps.next.outputs.version }}"
           pr_branch="${{ steps.next.outputs.pr_branch }}"
