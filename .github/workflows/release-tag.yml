@@ -88,8 +88,6 @@ on:
         required: true
       SUPERTOKENS_API_KEY:
         required: true
-      SUPERTOKENS_RELEASE_API_KEY:
-        required: true
 
 jobs:
   setup:
