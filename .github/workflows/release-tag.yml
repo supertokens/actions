@@ -2,7 +2,9 @@
 #
 # Consolidates the pipeline-release-tag.yml previously copied (with drift) across
 # supertokens-node / -python / -golang. Ported line-for-line from the golang
-# pipeline (the cleanest copy), parameterized by sdk_name. Two DELIBERATE changes
+# pipeline (the cleanest copy), parameterized by sdk_name / sdk_type (sdk_type
+# selects the /0/driver vs /0/frontend API and what register-version records,
+# letting frontend SDKs like auth-react use this same skeleton). Two DELIBERATE changes
 # from all current copies — everything else should diff clean against golang:
 #
 #   1. register-version is universal. Node's current pipeline lacks this job and
@@ -46,9 +48,18 @@ on:
   workflow_call:
     inputs:
       sdk_name:
-        description: 'SDK name as registered in the supertokens API ("name" field): node | python | golang'
+        description: 'SDK name as registered in the supertokens API ("name" field): node | python | golang | auth-react | ...'
         type: string
         required: true
+      sdk_type:
+        description: >-
+          API object type: "driver" (backend SDKs) or "frontend" (frontend SDKs
+          like auth-react / web-js). Selects the api.supertokens.io endpoint
+          (/0/driver vs /0/frontend) and what register-version records: drivers
+          register FDI + CDI arrays, frontend SDKs register FDI + the web-js
+          interface version.
+        type: string
+        default: driver
       branch:
         description: "Release branch (workflow_dispatch passthrough). Empty = derive from the merged release PR's base."
         type: string
@@ -193,19 +204,39 @@ jobs:
       - name: Register version with supertokens API
         run: |
           fdiVersions=$(jq -c '.versions' frontendDriverInterfaceSupported.json)
-          cdiVersions=$(jq -c '.versions' coreDriverInterfaceSupported.json)
 
-          curl --fail-with-body -X PUT \
-            https://api.supertokens.io/0/driver \
-            -H 'Content-Type: application/json' \
-            -H 'api-version: 0' \
-            -d "{
-              \"password\": \"${{ secrets.SUPERTOKENS_API_KEY }}\",
-              \"version\": \"${{ needs.setup.outputs.constantsVersion }}\",
-              \"name\": \"${{ inputs.sdk_name }}\",
-              \"frontendDriverInterfaces\": $fdiVersions,
-              \"coreDriverInterfaces\": $cdiVersions
-            }"
+          if [[ "${{ inputs.sdk_type }}" == "frontend" ]]; then
+            # Frontend SDKs register the supported web-js interface version
+            # instead of CDI versions. Note: the frontend PUT requires
+            # api-version 1 (the webJsInterface field does not exist in 0).
+            webJsInterface=$(jq -r '.version' webJsInterfaceSupported.json)
+
+            curl --fail-with-body -X PUT \
+              https://api.supertokens.io/0/frontend \
+              -H 'Content-Type: application/json' \
+              -H 'api-version: 1' \
+              -d "{
+                \"password\": \"${{ secrets.SUPERTOKENS_API_KEY }}\",
+                \"version\": \"${{ needs.setup.outputs.constantsVersion }}\",
+                \"name\": \"${{ inputs.sdk_name }}\",
+                \"frontendDriverInterfaces\": $fdiVersions,
+                \"webJsInterface\": \"$webJsInterface\"
+              }"
+          else
+            cdiVersions=$(jq -c '.versions' coreDriverInterfaceSupported.json)
+
+            curl --fail-with-body -X PUT \
+              https://api.supertokens.io/0/driver \
+              -H 'Content-Type: application/json' \
+              -H 'api-version: 0' \
+              -d "{
+                \"password\": \"${{ secrets.SUPERTOKENS_API_KEY }}\",
+                \"version\": \"${{ needs.setup.outputs.constantsVersion }}\",
+                \"name\": \"${{ inputs.sdk_name }}\",
+                \"frontendDriverInterfaces\": $fdiVersions,
+                \"coreDriverInterfaces\": $cdiVersions
+              }"
+          fi
 
   mark-as-success:
     runs-on: ubuntu-latest
@@ -229,7 +260,7 @@ jobs:
       - name: Mark tests as passed in supertokens API
         run: |
           curl --fail-with-body -X PATCH \
-              https://api.supertokens.io/0/driver \
+              https://api.supertokens.io/0/${{ inputs.sdk_type }} \
               -H 'Content-Type: application/json' \
               -H 'api-version: 0' \
               -d "{
@@ -291,7 +322,7 @@ jobs:
 
       - name: Check tests passed
         run: |
-          testsPassed=$(curl -s -X GET "https://api.supertokens.io/0/driver?password=${{ secrets.SUPERTOKENS_API_KEY }}&version=${{ needs.setup.outputs.constantsVersion }}&name=${{ inputs.sdk_name }}" -H 'api-version: 0')
+          testsPassed=$(curl -s -X GET "https://api.supertokens.io/0/${{ inputs.sdk_type }}?password=${{ secrets.SUPERTOKENS_API_KEY }}&version=${{ needs.setup.outputs.constantsVersion }}&name=${{ inputs.sdk_name }}" -H 'api-version: 0')
 
           if [[ $(echo $testsPassed | jq .testPassed) != "true" ]]
           then
@@ -302,11 +333,11 @@ jobs:
       - if: inputs.skip-other-version-checks != true
         name: Check if core and frontend released
         run: |
-          canReleaseSafelyResponse=$(curl -s -X GET "https://api.supertokens.io/0/driver/release/check?password=${{ secrets.SUPERTOKENS_API_KEY }}&version=${{ needs.setup.outputs.constantsVersion }}&name=${{ inputs.sdk_name }}" -H 'api-version: 0')
+          canReleaseSafelyResponse=$(curl -s -X GET "https://api.supertokens.io/0/${{ inputs.sdk_type }}/release/check?password=${{ secrets.SUPERTOKENS_API_KEY }}&version=${{ needs.setup.outputs.constantsVersion }}&name=${{ inputs.sdk_name }}" -H 'api-version: 0')
 
           if [[ $(echo $canReleaseSafelyResponse | jq .canRelease) != "true" ]]
           then
-            echo "Cannot release. Have you released corresponding core and frontend?"
+            echo "Cannot release. Have you released the corresponding core / SDK versions?"
             exit 1
           fi
 
@@ -341,7 +372,7 @@ jobs:
       - name: Mark for release
         run: |
           curl --fail-with-body -X PATCH \
-              https://api.supertokens.io/0/driver \
+              https://api.supertokens.io/0/${{ inputs.sdk_type }} \
               -H 'Content-Type: application/json' \
               -H 'api-version: 0' \
               -d "{
@@ -400,7 +431,7 @@ jobs:
       - name: Check API and merge to master
         id: merge-check
         run: |
-          response=$(curl -s -X GET "https://api.supertokens.io/0/driver/latest/check?password=${{ secrets.SUPERTOKENS_API_KEY }}&version=${{ needs.setup.outputs.constantsVersion }}&name=${{ inputs.sdk_name }}" -H 'api-version: 0')
+          response=$(curl -s -X GET "https://api.supertokens.io/0/${{ inputs.sdk_type }}/latest/check?password=${{ secrets.SUPERTOKENS_API_KEY }}&version=${{ needs.setup.outputs.constantsVersion }}&name=${{ inputs.sdk_name }}" -H 'api-version: 0')
           isLatest=$(echo $response | jq .isLatest)
 
           echo "isLatest=$isLatest" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
