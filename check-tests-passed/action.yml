@@ -36,6 +36,11 @@ inputs:
     required: false
     default: 'false'
 
+  require-checks:
+    description: Fail when the ref has no check runs at all (other than this run's own jobs), instead of passing
+    required: false
+    default: 'false'
+
 runs:
   using: composite
 
@@ -59,5 +64,6 @@ runs:
         INPUT_REPOSITORY: ${{ inputs.repository }}
         INPUT_RUN_ID: ${{ inputs.run_id }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_REQUIRE_CHECKS: ${{ inputs.require-checks }}
       run: |
         python3 "${{ github.action_path }}/check_tests.py"

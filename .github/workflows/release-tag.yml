@@ -31,6 +31,18 @@
 # script. Repo-specific extra checks (e.g. node's package-lock mismatch check)
 # also belong in the hook script, which exits non-zero to fail setup.
 #
+# Backport releases:
+#   A release from a version branch older than the newest released line (e.g.
+#   23.1 while v24.x tags exist) is a BACKPORT. setup decides this from the
+#   repo's vX.Y.Z tags and exposes it as the isBackport output. For backports:
+#     - the master-merge check is skipped (master holds the newer line);
+#     - the GitHub release is created with --latest=false;
+#     - merge never merges into master or syncs dev, and isLatest is always
+#       'false'. If the API's latest check disagrees, the merge job fails.
+#   Separately from the release kind, a branch without .changie.yaml (older
+#   lines keep CHANGELOG.md by hand) skips changie: the release PR must already
+#   contain a "## [X.Y.Z]" section, which also becomes the GitHub release notes.
+#
 # Environments & tokens:
 #   - `environment: publish` on the release job resolves in the CALLER repo, so
 #     each repo's own protection rules / required reviewers gate its releases.
@@ -80,8 +92,11 @@ on:
         description: The version branch released from, e.g. 0.26
         value: ${{ jobs.setup.outputs.branch }}
       isLatest:
-        description: "'true' if this version is the newest released version of this SDK (from the merge job)"
+        description: "'true' if this version is the newest released version of this SDK (from the merge job). Always 'false' for a backport."
         value: ${{ jobs.merge.outputs.isLatest }}
+      isBackport:
+        description: "'true' if this release is from a version branch older than the newest released line"
+        value: ${{ jobs.setup.outputs.isBackport }}
 
     secrets:
       RELEASE_APP_PRIVATE_KEY:
@@ -106,6 +121,7 @@ jobs:
       constantsVersion: ${{ steps.versions.outputs.constantsVersion }}
       constantsVersionXy: ${{ steps.versions.outputs.constantsVersionXy }}
       releaseTag: ${{ steps.versions.outputs.releaseTag }}
+      isBackport: ${{ steps.kind.outputs.isBackport }}
 
     steps:
       - name: Determine release branch
@@ -144,6 +160,30 @@ jobs:
           echo "constantsVersionXy=$constantsVersionXy" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
           echo "releaseTag=v$constantsVersion" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
 
+      - name: Determine release kind
+        id: kind
+        run: |
+          # A backport is a release from a version branch older than the newest
+          # released line. Released lines come from the vX.Y.Z tags (the
+          # checkout above fetched all of them), not from the version branches,
+          # so a newer branch that is cut but not yet released doesn't turn a
+          # patch of the current line into a backport. The API's latest check
+          # can't answer this yet: the version is registered after setup.
+          branch="${{ steps.params.outputs.branch }}"
+          newestTag=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          newestXy=$(echo "${newestTag#v}" | cut -d. -f1,2)
+
+          isBackport=false
+          if [[ -n "$newestXy" && "$branch" != "$newestXy" ]]; then
+            older=$(printf '%s\n%s\n' "$branch" "$newestXy" | sort -V | head -1)
+            if [[ "$older" == "$branch" ]]; then
+              isBackport=true
+            fi
+          fi
+
+          echo "Newest released line: ${newestXy:-none} (${newestTag:-no release tags})"
+          echo "isBackport=$isBackport" | tee -a "$GITHUB_OUTPUT"
+
       - name: Setup git
         run: |
           # NOTE: The user email is {user.id}+{user.login}@users.noreply.github.com.
@@ -154,6 +194,8 @@ jobs:
           git fetch origin master
 
       - name: Check if branch needs master merge
+        # A backport branch can't contain master: master holds the newer line.
+        if: steps.kind.outputs.isBackport != 'true'
         run: |
           if [[ $(git log origin/master ^HEAD) != "" ]]; then
             echo "You need to merge master into this branch."
@@ -225,6 +267,9 @@ jobs:
           # some callers' runners are guaranteed to have the right version.
           setup-python: true
           skip-test-checks: ${{ inputs.skip-test-checks }}
+          # A branch head with no check runs at all (e.g. an old branch whose
+          # CI doesn't run on push) must not count as "tests passed".
+          require-checks: true
 
       - name: Mark tests as passed in supertokens API
         run: |
@@ -311,11 +356,24 @@ jobs:
           fi
 
       - uses: miniscruff/changie-action@v2
+        if: hashFiles('.changie.yaml') != ''
         with:
           version: latest
 
       - name: Update changelog for release
         run: |
+          if [[ ! -f .changie.yaml ]]; then
+            # Branches without changie (older lines) keep CHANGELOG.md by hand.
+            # The release PR must already contain this version's section; it
+            # is also used as the GitHub release notes. Nothing to commit.
+            version="${{ needs.setup.outputs.constantsVersion }}"
+            if ! awk -v h="## [${version}]" 'index($0, h) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
+              echo "::error::CHANGELOG.md has no '## [${version}]' section. Add it in the release PR."
+              exit 1
+            fi
+            exit 0
+          fi
+
           version_file=".changes/${{ needs.setup.outputs.releaseTag }}.md"
 
           if [[ -f "$version_file" ]]; then
@@ -359,10 +417,30 @@ jobs:
           # Title uses the repo name (e.g. "supertokens-golang 0.26.0") instead
           # of the old per-repo prose titles ("Go SDK ...") to avoid another
           # input for a cosmetic string.
-          notes=$(sed '1d' .changes/${{ needs.setup.outputs.releaseTag }}.md | sed '/./,$!d')
+          #
+          # Branches without changie have no .changes/vX.Y.Z.md: use the
+          # version's section of CHANGELOG.md instead.
+          version_file=".changes/${{ needs.setup.outputs.releaseTag }}.md"
+          if [[ -f "$version_file" ]]; then
+            notes=$(sed '1d' "$version_file" | sed '/./,$!d')
+          else
+            notes=$(awk -v h="## [${{ needs.setup.outputs.constantsVersion }}]" '
+              index($0, h) == 1 { found = 1; next }
+              found && /^## / { exit }
+              found { print }
+            ' CHANGELOG.md | sed '/./,$!d')
+          fi
+
+          # A backport must never become the repository's "Latest" release.
+          latest_flag=()
+          if [[ "${{ needs.setup.outputs.isBackport }}" == "true" ]]; then
+            latest_flag=(--latest=false)
+          fi
+
           gh release create "${{ needs.setup.outputs.releaseTag }}" \
             --title "${{ github.event.repository.name }} ${{ needs.setup.outputs.constantsVersion }}" \
-            --notes "$notes"
+            --notes "$notes" \
+            "${latest_flag[@]}"
 
   merge:
     runs-on: ubuntu-latest
@@ -403,6 +481,17 @@ jobs:
           response=$(curl -s -X GET "https://api.supertokens.io/0/driver/latest/check?password=${{ secrets.SUPERTOKENS_API_KEY }}&version=${{ needs.setup.outputs.constantsVersion }}&name=${{ inputs.sdk_name }}" -H 'api-version: 0')
           isLatest=$(echo $response | jq .isLatest)
 
+          if [[ "${{ needs.setup.outputs.isBackport }}" == "true" ]]; then
+            # Backports never merge into master or sync dev, and callers must
+            # never publish them as latest.
+            echo "isLatest=false" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+            if [[ $isLatest == "true" ]]; then
+              echo "::error::setup classified ${{ needs.setup.outputs.releaseTag }} as a backport, but the API's latest check says it is the newest version. Not merging into master; check the release tags and the API before publishing."
+              exit 1
+            fi
+            exit 0
+          fi
+
           echo "isLatest=$isLatest" | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
 
           if [[ $isLatest == "true" ]]
@@ -426,7 +515,8 @@ jobs:
         # absence is what let node's dev drift (the v24.0.2-class incidents).
         # Living here, no repo can lose it again.
         #
-        # Only runs for the latest version — older branch patches don't touch dev.
+        # Only runs for the latest version — older branch patches (backports)
+        # don't touch dev.
         if: steps.merge-check.outputs.isLatest == 'true'
         run: |
           git fetch origin dev

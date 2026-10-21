@@ -9,6 +9,7 @@ ref = os.environ["INPUT_REF"]
 repository = os.environ["INPUT_REPOSITORY"]
 run_id = os.environ["INPUT_RUN_ID"]
 github_token = os.environ.get("INPUT_GITHUB_TOKEN", "")
+require_checks = os.environ.get("INPUT_REQUIRE_CHECKS", "false").lower() == "true"
 
 if ref_type not in ("branch", "tag", "commit"):
     print(f"Invalid ref type: {ref_type}")
@@ -66,6 +67,12 @@ print(f"{total=}")
 print("Status Map =", dict(status_map))
 print("Conclusion Map =", dict(conclusion_map))
 print()
+
+# Without this, a ref that no CI workflow ran on would count as "all passed".
+if require_checks and total == 0:
+    print("No check runs found for this ref, so there is nothing to show the tests passed.")
+    print("Make sure CI runs on pushes to this branch, or rerun with skip-test-checks.")
+    sys.exit(1)
 
 # Possible values (from docs):
 # [completed, action_required, cancelled, failure, neutral, skipped, stale, success,
